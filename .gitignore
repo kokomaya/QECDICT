@@ -11,3 +11,6 @@ stardict/
 
 
 *.db
+*.db-wal
+*.log
+*.db-shm

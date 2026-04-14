@@ -1,1 +1,80 @@
-/* QuickDict 弹窗样式表 */
+/* ── QuickDict 翻译弹窗样式表 (浅色模式) ── */
+
+QFrame#card {
+    background-color: #FFFFFF;
+    border-radius: 8px;
+    border: 1px solid #E0E0E0;
+}
+
+/* ── 顶部区域：单词 + 音标 + 星级 ── */
+
+QLabel#word {
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1A1A2E;
+}
+
+QLabel#phonetic {
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 13px;
+    color: #6C757D;
+    padding-left: 6px;
+}
+
+QLabel#collins {
+    font-size: 13px;
+    color: #F5A623;
+    padding-left: 4px;
+}
+
+QLabel#lemma_hint {
+    font-family: "Microsoft YaHei UI", sans-serif;
+    font-size: 11px;
+    color: #9E9E9E;
+    padding-top: 2px;
+}
+
+/* ── 分隔线 ── */
+
+QFrame#separator {
+    background-color: #F0F0F0;
+    max-height: 1px;
+    min-height: 1px;
+    border: none;
+}
+
+/* ── 中部区域：释义 ── */
+
+QLabel#translation {
+    font-family: "Microsoft YaHei UI", sans-serif;
+    font-size: 14px;
+    color: #1A1A2E;
+}
+
+QLabel#definition {
+    font-family: "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #6C757D;
+}
+
+/* ── 底部区域：词频/标签/词形变化 ── */
+
+QLabel#freq_info {
+    font-family: "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #9E9E9E;
+}
+
+QLabel#tags {
+    font-family: "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #4361EE;
+    font-weight: 500;
+}
+
+QLabel#exchange_info {
+    font-family: "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #9E9E9E;
+}
