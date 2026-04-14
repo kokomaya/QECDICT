@@ -30,6 +30,7 @@ class TrayManager(QObject):
 
     sig_toggle_capture = pyqtSignal()
     sig_capture_mode_changed = pyqtSignal(str)  # "auto" / "uia" / "ocr"
+    sig_trigger_mode_changed = pyqtSignal(str)  # "hover" / "ctrl"
     sig_open_settings = pyqtSignal()
     sig_open_history = pyqtSignal()
     sig_quit = pyqtSignal()
@@ -58,6 +59,20 @@ class TrayManager(QObject):
             action.triggered.connect(lambda checked, k=key: self.sig_capture_mode_changed.emit(k))
             self._mode_actions[key] = action
         self._mode_actions["auto"].setChecked(True)
+
+        # 触发方式子菜单
+        self._trigger_menu = self._menu.addMenu("触发方式")
+        self._trigger_group = QActionGroup(self)
+        self._trigger_group.setExclusive(True)
+        self._trigger_actions: dict[str, QAction] = {}
+        for key, label in [("hover", "悬停取词"), ("ctrl", "Ctrl 键取词")]:
+            action = self._trigger_menu.addAction(label)
+            action.setCheckable(True)
+            action.setActionGroup(self._trigger_group)
+            action.setData(key)
+            action.triggered.connect(lambda checked, k=key: self.sig_trigger_mode_changed.emit(k))
+            self._trigger_actions[key] = action
+        self._trigger_actions["hover"].setChecked(True)
 
         self._menu.addSeparator()
         self._action_history = self._menu.addAction("查词历史")
@@ -91,6 +106,12 @@ class TrayManager(QObject):
     def set_capture_mode_checked(self, mode_key: str):
         """设置取词模式菜单的选中状态。"""
         action = self._mode_actions.get(mode_key)
+        if action:
+            action.setChecked(True)
+
+    def set_trigger_mode_checked(self, mode_key: str):
+        """设置触发方式菜单的选中状态。"""
+        action = self._trigger_actions.get(mode_key)
         if action:
             action.setChecked(True)
 

@@ -26,6 +26,7 @@ class _HotkeyBridge(QObject):
     """将 pynput 线程的回调安全地派发到 Qt 主线程。"""
     activated = pyqtSignal()
     deactivated = pyqtSignal()
+    ctrl_captured = pyqtSignal()
 
 
 # ── 主控制器 ──────────────────────────────────────────────
@@ -86,21 +87,28 @@ class QuickDictApp(QObject):
         self._last_word: str | None = None
         self._word_zone_radius: int = self._WORD_ZONE_BASE_PX
 
+        # 触发方式：hover / ctrl
+        self._trigger_mode: str = self._settings.get("trigger_mode", "hover")
+
         # 快捷键监听（pynput 线程 → Qt 信号桥接）
         self._bridge = _HotkeyBridge()
         self._bridge.activated.connect(self._on_activate)
         self._bridge.deactivated.connect(self._on_deactivate)
+        self._bridge.ctrl_captured.connect(self._on_ctrl_capture)
         self._hotkey = HotkeyListener(
             on_activate=self._bridge.activated.emit,
             on_deactivate=self._bridge.deactivated.emit,
+            on_ctrl_capture=self._bridge.ctrl_captured.emit,
         )
 
         # 系统托盘
         self._tray = TrayManager()
         self._tray.sig_toggle_capture.connect(self._on_tray_toggle)
         self._tray.sig_capture_mode_changed.connect(self._on_capture_mode_changed)
+        self._tray.sig_trigger_mode_changed.connect(self._on_trigger_mode_changed)
         self._tray.sig_quit.connect(self._quit)
         self._tray.set_capture_mode_checked(saved_mode_key)
+        self._tray.set_trigger_mode_checked(self._trigger_mode)
         self._tray.show()
 
         # 启动键盘监听
@@ -158,6 +166,43 @@ class QuickDictApp(QObject):
         label = self._MODE_LABELS.get(mode_key, mode_key)
         self._tray.show_message("QECDict", f"取词模式: {label}", 500)
 
+    _TRIGGER_LABELS = {"hover": "悬停取词", "ctrl": "Ctrl 键取词"}
+
+    def _on_trigger_mode_changed(self, mode_key: str):
+        """托盘菜单切换触发方式。"""
+        self._trigger_mode = mode_key
+        self._settings["trigger_mode"] = mode_key
+        save_settings(self._settings)
+
+        if self._hotkey.is_active:
+            self._settle_timer.stop()
+            self._loading.hide_dot()
+
+        label = self._TRIGGER_LABELS.get(mode_key, mode_key)
+        self._tray.show_message("QECDict", f"触发方式: {label}", 500)
+
+    def _on_ctrl_capture(self):
+        """Ctrl 键取词：在当前鼠标位置立即取词。"""
+        if self._trigger_mode != "ctrl":
+            return
+
+        x, y = self._get_cursor_pos()
+        self._loading.show_at(x, y)
+
+        word = self._capture.capture(x, y)
+
+        if not word:
+            self._loading.hide_dot()
+            return
+
+        self._anchor_pos = (x, y)
+        self._last_word = word
+        self._settle_pos = (x, y)
+        self._word_zone_radius = (self._WORD_ZONE_BASE_PX
+                                  + len(word) * self._WORD_ZONE_PER_CHAR_PX)
+        parts = self._capture.split_word(word)
+        self._sig_lookup.emit(word, parts)
+
     # ── 取词轮询 & 防抖 ──────────────────────────────────
 
     def _on_poll(self):
@@ -179,14 +224,16 @@ class QuickDictApp(QObject):
             # 仍在 settle 起点附近 → 放行 settle 定时器继续倒计时
             return
 
-        # 鼠标已漂移出 settle 起点 → 难开旧词区域，重新等待静止
+        # 鼠标已漂移出 settle 起点 → 关闭旧弹窗，重新等待静止
         if self._last_word:
             self._popup.hide_popup()
             self._last_word = None
             self._anchor_pos = None
         self._loading.hide_dot()
         self._settle_pos = (x, y)
-        self._settle_timer.start()
+        # 悬停模式才启动 settle 定时器触发新取词
+        if self._trigger_mode == "hover":
+            self._settle_timer.start()
 
     def _on_settle(self):
         """鼠标静止足够久 → 显示加载指示，执行取词并查询。"""

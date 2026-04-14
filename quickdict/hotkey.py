@@ -17,13 +17,16 @@ class HotkeyListener:
     - 500ms 内连按两次 Ctrl（左/右均可）→ 切换取词模式
     - 取词模式下按 Esc → 退出取词模式
     - Ctrl 组合键（如 Ctrl+C）不触发激活
+    - 取词模式下单次 Ctrl 释放 → 触发 on_ctrl_capture（供 Ctrl 取词模式使用）
     """
 
     DOUBLE_PRESS_INTERVAL = 0.5  # 秒
 
-    def __init__(self, on_activate: Callable, on_deactivate: Callable):
+    def __init__(self, on_activate: Callable, on_deactivate: Callable,
+                 on_ctrl_capture: Callable | None = None):
         self._on_activate = on_activate
         self._on_deactivate = on_deactivate
+        self._on_ctrl_capture = on_ctrl_capture
         self._active = False
         self._ctrl_release_times: list[float] = []
         self._other_key_pressed = False
@@ -87,6 +90,11 @@ class HotkeyListener:
         if len(self._ctrl_release_times) >= 2:
             self._ctrl_release_times.clear()
             self._toggle()
+            return
+
+        # 取词模式已激活 + 单次 Ctrl → 触发 Ctrl 取词回调
+        if self._active and self._on_ctrl_capture:
+            self._on_ctrl_capture()
 
     # ── 状态切换 ──────────────────────────────────────────
 
