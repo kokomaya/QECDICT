@@ -42,13 +42,15 @@ def _load_qss() -> str:
 
 
 def _truncate_lines(text: str, max_lines: int = _MAX_LINES) -> str:
-    """截断多行文本，超出部分显示省略号。"""
+    """截断多行文本，超出部分显示省略号。返回 HTML（用 <br> 换行）。"""
     if not text:
         return ""
+    # 数据库中存储的是字面 "\\n"，需先替换为真实换行再处理
+    text = text.replace("\\n", "\n")
     lines = text.strip().split("\n")
     if len(lines) <= max_lines:
-        return "\n".join(lines)
-    return "\n".join(lines[:max_lines]) + "\n..."
+        return "<br>".join(lines)
+    return "<br>".join(lines[:max_lines]) + "<br>..."
 
 
 def _format_exchange_display(exchange: dict[str, str]) -> str:

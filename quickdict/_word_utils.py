@@ -57,25 +57,31 @@ def extract_word_at_position(text: str, char_pos: int) -> str | None:
     从文本中提取 char_pos 位置所在的英文单词。
 
     从 char_pos 向两侧扩展，找到由字母组成的连续片段。
+    如果当前位置不是字母，最多向两侧搜索 3 个字符，避免空白区域误取远处单词。
     """
     if not text:
         return None
     char_pos = max(0, min(char_pos, len(text) - 1))
 
-    # 如果当前位置不是字母，向两侧搜索最近的字母
+    _MAX_SEARCH_RADIUS = 3  # 最大搜索半径（字符数）
+
+    # 如果当前位置不是字母，向两侧搜索最近的字母（限距离）
     if not text[char_pos].isalpha():
         left = char_pos - 1
         right = char_pos + 1
-        while left >= 0 or right < len(text):
+        found = False
+        for _ in range(_MAX_SEARCH_RADIUS):
             if left >= 0 and text[left].isalpha():
                 char_pos = left
+                found = True
                 break
             if right < len(text) and text[right].isalpha():
                 char_pos = right
+                found = True
                 break
             left -= 1
             right += 1
-        else:
+        if not found:
             return None
 
     # 向左扩展到单词开头

@@ -138,6 +138,13 @@ class QuickDictApp(QObject):
 # ── 入口 ──────────────────────────────────────────────────
 
 def main():
+    # 设置 Per-Monitor DPI 感知（必须在 QApplication 之前调用）
+    # 确保多显示器不同 DPI 下坐标正确，UI Automation 取词不受影响
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except Exception:
+        ctypes.windll.user32.SetProcessDPIAware()  # 回退：System DPI Aware
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 关闭弹窗不退出程序
 
