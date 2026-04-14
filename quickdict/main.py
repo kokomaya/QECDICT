@@ -14,7 +14,7 @@ from quickdict.config import ensure_db
 from quickdict.config import logger
 from quickdict.dict_engine import DictEngine
 from quickdict.hotkey import HotkeyListener
-from quickdict.word_capture import WordCapture
+from quickdict.word_capture import WordCapture, CaptureMode
 from quickdict.popup_widget import PopupWidget
 from quickdict.app import TrayManager
 
@@ -65,6 +65,7 @@ class QuickDictApp(QObject):
         # 系统托盘
         self._tray = TrayManager()
         self._tray.sig_toggle_capture.connect(self._on_tray_toggle)
+        self._tray.sig_capture_mode_changed.connect(self._on_capture_mode_changed)
         self._tray.sig_quit.connect(self._quit)
         self._tray.show()
 
@@ -96,6 +97,24 @@ class QuickDictApp(QObject):
             self._hotkey.start()
             self._tray.set_capture_enabled(False)
             self._tray.show_message("QuickDict", "快捷键已开启，连按 Ctrl×2 取词")
+
+    _MODE_MAP = {
+        "auto": CaptureMode.AUTO,
+        "uia": CaptureMode.UIA_ONLY,
+        "ocr": CaptureMode.OCR_ONLY,
+    }
+    _MODE_LABELS = {
+        "auto": "自动（UIA→OCR）",
+        "uia": "仅 UIA",
+        "ocr": "仅 OCR",
+    }
+
+    def _on_capture_mode_changed(self, mode_key: str):
+        """托盘菜单切换取词模式。"""
+        mode = self._MODE_MAP.get(mode_key, CaptureMode.AUTO)
+        self._capture.set_mode(mode)
+        label = self._MODE_LABELS.get(mode_key, mode_key)
+        self._tray.show_message("QuickDict", f"取词模式: {label}")
 
     # ── 取词轮询 ──────────────────────────────────────────
 

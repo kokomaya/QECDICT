@@ -1,11 +1,13 @@
 """
 word_capture.py — 屏幕取词模块。
 
-职责单一：获取鼠标位置下的英文单词（通过 Windows UI Automation）。
-文本处理逻辑委托给 _word_utils。后续 Task 9 会在此增加 OCR 回退。
+职责单一：获取鼠标位置下的英文单词。
+取词策略可切换: 自动（UIA→OCR）/ 仅 UIA / 仅 OCR。
+文本处理逻辑委托给 _word_utils，OCR 逻辑委托给 _ocr_capture。
 """
 import ctypes
 import ctypes.wintypes
+from enum import Enum
 
 import uiautomation as uia
 
@@ -16,6 +18,14 @@ from quickdict._word_utils import (
     first_english_word,
     split_compound,
 )
+from quickdict._ocr_capture import OcrCapture
+
+
+class CaptureMode(Enum):
+    """取词模式枚举。"""
+    AUTO = "auto"        # UIA 优先，失败回退 OCR
+    UIA_ONLY = "uia"     # 仅 UI Automation
+    OCR_ONLY = "ocr"     # 仅 OCR 截屏识别
 
 
 def _get_cursor_pos() -> tuple[int, int]:
@@ -26,16 +36,39 @@ def _get_cursor_pos() -> tuple[int, int]:
 
 
 class WordCapture:
-    """屏幕取词器：获取鼠标位置下的英文单词。"""
+    """屏幕取词器：支持 UIA / OCR / 自动三种模式。"""
+
+    def __init__(self):
+        self._ocr = OcrCapture()
+        self._mode = CaptureMode.AUTO
+
+    @property
+    def mode(self) -> CaptureMode:
+        return self._mode
+
+    def set_mode(self, mode: CaptureMode):
+        """切换取词模式。"""
+        self._mode = mode
 
     def capture(self) -> str | None:
         """
         获取鼠标当前位置下的英文单词。
 
-        返回清理后的小写单词，或 None。
+        根据当前模式选择取词策略。返回清理后的小写单词，或 None。
         """
         x, y = _get_cursor_pos()
-        return self._capture_via_uia(x, y)
+
+        if self._mode == CaptureMode.UIA_ONLY:
+            return self._capture_via_uia(x, y)
+
+        if self._mode == CaptureMode.OCR_ONLY:
+            return self._ocr.capture(x, y)
+
+        # AUTO: UIA 优先 → OCR 回退
+        word = self._capture_via_uia(x, y)
+        if word:
+            return word
+        return self._ocr.capture(x, y)
 
     def capture_split(self) -> list[str]:
         """

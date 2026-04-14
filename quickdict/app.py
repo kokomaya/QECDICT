@@ -9,7 +9,7 @@ import os
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QActionGroup
 from PyQt6.QtCore import Qt
 
 from quickdict.config import ASSETS_DIR
@@ -29,6 +29,7 @@ class TrayManager(QObject):
     """
 
     sig_toggle_capture = pyqtSignal()
+    sig_capture_mode_changed = pyqtSignal(str)  # "auto" / "uia" / "ocr"
     sig_open_settings = pyqtSignal()
     sig_open_history = pyqtSignal()
     sig_quit = pyqtSignal()
@@ -43,6 +44,21 @@ class TrayManager(QObject):
         self._menu = QMenu()
         self._action_toggle = self._menu.addAction("开启取词")
         self._action_toggle.triggered.connect(self._on_toggle_clicked)
+
+        # 取词模式子菜单
+        self._mode_menu = self._menu.addMenu("取词模式")
+        self._mode_group = QActionGroup(self)
+        self._mode_group.setExclusive(True)
+        self._mode_actions: dict[str, QAction] = {}
+        for key, label in [("auto", "自动（UIA→OCR）"), ("uia", "仅 UIA"), ("ocr", "仅 OCR")]:
+            action = self._mode_menu.addAction(label)
+            action.setCheckable(True)
+            action.setActionGroup(self._mode_group)
+            action.setData(key)
+            action.triggered.connect(lambda checked, k=key: self.sig_capture_mode_changed.emit(k))
+            self._mode_actions[key] = action
+        self._mode_actions["auto"].setChecked(True)
+
         self._menu.addSeparator()
         self._action_history = self._menu.addAction("查词历史")
         self._action_history.triggered.connect(self.sig_open_history.emit)
