@@ -100,6 +100,7 @@ class PopupWidget(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowTitle("QECDict")
         self.setMaximumWidth(420)
         self.setMinimumWidth(280)
 

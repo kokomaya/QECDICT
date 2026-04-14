@@ -32,7 +32,8 @@ class _HotkeyBridge(QObject):
 class QuickDictApp(QObject):
     """主程序控制器：管理各模块的生命周期和信号流。"""
 
-    _POLL_INTERVAL_MS = 200  # 取词轮询间隔
+    _POLL_INTERVAL_MS = 150  # 取词轮询间隔
+    _MOUSE_MOVE_THRESHOLD = 30  # 鼠标移动超过该像素才重新取词
 
     def __init__(self):
         super().__init__()
@@ -77,9 +78,10 @@ class QuickDictApp(QObject):
 
     def _on_activate(self):
         self._last_word = None
+        self._last_pos = (0, 0)
         self._poll_timer.start()
         self._tray.set_capture_enabled(True)
-        self._tray.show_message("QuickDict", "取词模式已开启")
+        self._tray.show_message("QECDict", "取词模式已开启", 500)
 
     def _on_deactivate(self):
         self._poll_timer.stop()
@@ -92,11 +94,11 @@ class QuickDictApp(QObject):
         if self._hotkey.is_active:
             self._hotkey.stop()
             self._on_deactivate()
-            self._tray.show_message("QuickDict", "取词已关闭，快捷键已停用")
+            self._tray.show_message("QECDict", "取词已关闭", 500)
         else:
             self._hotkey.start()
             self._tray.set_capture_enabled(False)
-            self._tray.show_message("QuickDict", "快捷键已开启，连按 Ctrl×2 取词")
+            self._tray.show_message("QECDict", "快捷键已开启，连按 Ctrl×2 取词", 500)
 
     _MODE_MAP = {
         "auto": CaptureMode.AUTO,
@@ -114,14 +116,26 @@ class QuickDictApp(QObject):
         mode = self._MODE_MAP.get(mode_key, CaptureMode.AUTO)
         self._capture.set_mode(mode)
         label = self._MODE_LABELS.get(mode_key, mode_key)
-        self._tray.show_message("QuickDict", f"取词模式: {label}")
+        self._tray.show_message("QECDict", f"取词模式: {label}", 500)
 
     # ── 取词轮询 ──────────────────────────────────────────
 
     def _on_poll(self):
-        """每 200ms 检测鼠标下的单词并查询。"""
+        """每 150ms 检测鼠标下的单词并查询。"""
+        x, y = self._get_cursor_pos()
+
+        # 鼠标未移动足够距离 → 跳过
+        lx, ly = getattr(self, '_last_pos', (0, 0))
+        if abs(x - lx) < self._MOUSE_MOVE_THRESHOLD and abs(y - ly) < self._MOUSE_MOVE_THRESHOLD:
+            return
+        self._last_pos = (x, y)
+
         word = self._capture.capture()
         if not word or word == self._last_word:
+            # 鼠标移动了但取不到词 → 隐藏旧弹窗
+            if not word and self._last_word:
+                self._popup.hide_popup()
+                self._last_word = None
             return
 
         self._last_word = word
@@ -165,6 +179,7 @@ def main():
         ctypes.windll.user32.SetProcessDPIAware()  # 回退：System DPI Aware
 
     app = QApplication(sys.argv)
+    app.setApplicationName("QECDict")
     app.setQuitOnLastWindowClosed(False)  # 关闭弹窗不退出程序
 
     controller = QuickDictApp()

@@ -38,7 +38,7 @@ class TrayManager(QObject):
         super().__init__(parent)
         self._capture_enabled = False
         self._tray = QSystemTrayIcon(self._load_icon(), parent)
-        self._tray.setToolTip("QuickDict — 连按 Ctrl×2 取词")
+        self._tray.setToolTip("QECDict — 连按 Ctrl×2 取词")
 
         # 右键菜单
         self._menu = QMenu()
