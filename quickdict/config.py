@@ -17,7 +17,10 @@ logging.basicConfig(
     format="[%(name)s] %(message)s",
 )
 logger = logging.getLogger("QuickDict")
-logger.setLevel(logging.CRITICAL if FROZEN else logging.INFO)
+if FROZEN:
+    logging.disable(logging.CRITICAL)
+else:
+    logger.setLevel(logging.INFO)
 
 if FROZEN:
     # PyInstaller 打包后: 临时解压目录（内置资源）
