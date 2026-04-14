@@ -14,7 +14,7 @@ from PyQt6.QtCore import (
     Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QCursor
+from PyQt6.QtGui import QColor, QCursor, QPainter, QPen, QBrush
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -335,6 +335,61 @@ class PopupWidget(QWidget):
     def mousePressEvent(self, event):
         # 允许点击弹窗内部（不关闭），外部点击由 focusOut 处理
         super().mousePressEvent(event)
+
+
+# ══════════════════════════════════════════════════════════
+#  LoadingDot — 取词进度指示
+# ══════════════════════════════════════════════════════════
+
+class LoadingDot(QWidget):
+    """鼠标旁的极简加载指示：小圆点 + 脉冲动画。"""
+
+    _SIZE = 10        # 圆点直径（px）
+    _WINDOW = 22      # 窗口尺寸（留阴影空间）
+    _COLOR = QColor(67, 97, 238, 200)  # 蓝色半透明
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+            | Qt.WindowType.WindowTransparentForInput
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setFixedSize(self._WINDOW, self._WINDOW)
+
+        # 脉冲动画：透明度 0.4 → 1.0 → 0.4 循环
+        self._opacity = 1.0
+        self._pulse = QPropertyAnimation(self, b"windowOpacity")
+        self._pulse.setDuration(600)
+        self._pulse.setStartValue(0.4)
+        self._pulse.setEndValue(1.0)
+        self._pulse.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._pulse.setLoopCount(-1)  # 无限循环
+
+    def show_at(self, x: int, y: int):
+        """在指定坐标（鼠标位置）右下方显示加载指示。"""
+        self.move(x + 12, y + 14)
+        self.setWindowOpacity(1.0)
+        self.show()
+        self._pulse.start()
+
+    def hide_dot(self):
+        """隐藏加载指示。"""
+        self._pulse.stop()
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self._COLOR))
+        offset = (self._WINDOW - self._SIZE) // 2
+        painter.drawEllipse(offset, offset, self._SIZE, self._SIZE)
+        painter.end()
 
 
 # ══════════════════════════════════════════════════════════

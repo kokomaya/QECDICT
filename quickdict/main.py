@@ -15,7 +15,7 @@ from quickdict.config import ensure_db, load_settings, save_settings
 from quickdict.config import logger
 from quickdict.hotkey import HotkeyListener
 from quickdict.word_capture import WordCapture, CaptureMode
-from quickdict.popup_widget import PopupWidget
+from quickdict.popup_widget import PopupWidget, LoadingDot
 from quickdict.app import TrayManager
 from quickdict._lookup_worker import LookupWorker
 
@@ -58,6 +58,7 @@ class QuickDictApp(QObject):
 
         # 翻译弹窗
         self._popup = PopupWidget()
+        self._loading = LoadingDot()
 
         # 后台查询线程（sqlite3 连接必须在使用线程中创建）
         self._worker = LookupWorker(db_path)
@@ -121,6 +122,7 @@ class QuickDictApp(QObject):
     def _on_deactivate(self):
         self._poll_timer.stop()
         self._settle_timer.stop()
+        self._loading.hide_dot()
         self._popup.hide_popup()
         self._last_word = None
         self._anchor_pos = None
@@ -184,11 +186,12 @@ class QuickDictApp(QObject):
             self._popup.hide_popup()
             self._last_word = None
             self._anchor_pos = None
+        self._loading.hide_dot()
         self._settle_pos = (x, y)
         self._settle_timer.start()
 
     def _on_settle(self):
-        """鼠标静止足够久 → 执行取词并查询。"""
+        """鼠标静止足够久 → 显示加载指示，执行取词并查询。"""
         x, y = self._get_cursor_pos()
 
         # settle 期间鼠标大幅移动 → 放弃本次取词
@@ -196,14 +199,19 @@ class QuickDictApp(QObject):
         if ((x - sx) ** 2 + (y - sy) ** 2) ** 0.5 > self._ABORT_MOVE_PX:
             return
 
+        # 显示加载指示
+        self._loading.show_at(x, y)
+
         word = self._capture.capture(x, y)
 
         # 取词后再次检查：取词期间鼠标大幅移动 → 丢弃结果
         cx, cy = self._get_cursor_pos()
         if ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5 > self._ABORT_MOVE_PX:
+            self._loading.hide_dot()
             return
 
         if not word:
+            self._loading.hide_dot()
             if self._last_word:
                 self._popup.hide_popup()
                 self._last_word = None
@@ -224,7 +232,8 @@ class QuickDictApp(QObject):
         self._sig_lookup.emit(word, parts)
 
     def _on_lookup_result(self, word: str, data):
-        """后台查询完成 → 在主线程显示弹窗。"""
+        """后台查询完成 → 隐藏加载指示，在主线程显示弹窗。"""
+        self._loading.hide_dot()
         # 查询期间单词已变 → 丢弃过期结果
         if word != self._last_word:
             return
