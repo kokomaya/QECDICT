@@ -1,4 +1,5 @@
 # 配置管理（快捷键、主题等）
+import logging
 import os
 import sys
 
@@ -6,6 +7,16 @@ VERSION = "0.1.0"
 
 # ── 冻结/开发 环境检测 ────────────────────────────────────
 FROZEN = getattr(sys, "frozen", False)
+
+# ── 日志配置 ──────────────────────────────────────────────
+# Release(FROZEN) → 静默；开发 → INFO 级别输出到 stderr
+# 根级别设 WARNING 避免第三方库噪音，QuickDict 自己的 logger 单独设级别
+logging.basicConfig(
+    level=logging.WARNING,
+    format="[%(name)s] %(message)s",
+)
+logger = logging.getLogger("QuickDict")
+logger.setLevel(logging.CRITICAL if FROZEN else logging.INFO)
 
 if FROZEN:
     # PyInstaller 打包后: 临时解压目录（内置资源）
@@ -58,8 +69,8 @@ def ensure_db() -> str:
             f"或运行: python -m quickdict.build_db --csv <path>"
         )
 
-    print(f"[QuickDict] 首次启动，正在构建词典数据库（约 1-2 分钟）...")
-    print(f"[QuickDict] CSV 源: {csv_path}")
+    logger.info("首次启动，正在构建词典数据库（约 1-2 分钟）...")
+    logger.info("CSV 源: %s", csv_path)
 
     from quickdict._db_importer import import_csv_to_db
     from quickdict._lemma_builder import build_lemma_table
@@ -67,6 +78,6 @@ def ensure_db() -> str:
     os.makedirs(DATA_DIR, exist_ok=True)
     word_count = import_csv_to_db(csv_path, DB_PATH)
     lemma_count = build_lemma_table(DB_PATH)
-    print(f"[QuickDict] 完成: {word_count} 词条, {lemma_count} 词形映射")
+    logger.info("完成: %d 词条, %d 词形映射", word_count, lemma_count)
 
     return DB_PATH

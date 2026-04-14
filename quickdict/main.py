@@ -11,6 +11,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 from quickdict.config import ensure_db
+from quickdict.config import logger
 from quickdict.dict_engine import DictEngine
 from quickdict.hotkey import HotkeyListener
 from quickdict.word_capture import WordCapture
@@ -69,7 +70,7 @@ class QuickDictApp(QObject):
 
         # 启动键盘监听
         self._hotkey.start()
-        print("[QuickDict] 已启动 — 连按两次 Ctrl 激活取词，Esc 退出取词模式")
+        logger.info("已启动 — 连按两次 Ctrl 激活取词，Esc 退出取词模式")
 
     # ── 取词模式控制 ──────────────────────────────────────
 

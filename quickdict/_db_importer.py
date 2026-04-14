@@ -9,6 +9,8 @@ import os
 import sqlite3
 import sys
 
+from quickdict.config import logger
+
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
@@ -114,7 +116,7 @@ def import_csv_to_db(csv_path: str, db_path: str) -> int:
             batch.clear()
 
         if count % _LOG_INTERVAL == 0:
-            print(f"       ... {count} words processed")
+            logger.info("... %d words processed", count)
 
     # 写入剩余数据
     if batch:
