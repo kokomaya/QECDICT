@@ -14,3 +14,7 @@ stardict/
 *.db-wal
 *.log
 *.db-shm
+
+release/
+dist/
+build/

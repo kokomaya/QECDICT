@@ -28,13 +28,13 @@ from PyQt6.QtWidgets import (
 )
 
 from quickdict._formatter import EXCHANGE_TYPE_MAP
+from quickdict.config import STYLES_DIR
 
-_STYLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles")
 _MAX_LINES = 3  # 释义最多显示行数
 
 
 def _load_qss() -> str:
-    qss_path = os.path.join(_STYLES_DIR, "popup.qss")
+    qss_path = os.path.join(STYLES_DIR, "popup.qss")
     if os.path.exists(qss_path):
         with open(qss_path, encoding="utf-8") as f:
             return f.read()

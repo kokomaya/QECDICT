@@ -2,13 +2,29 @@
 import os
 import sys
 
-# ── 路径常量 ──────────────────────────────────────────────
-_QUICKDICT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(_QUICKDICT_DIR)
+# ── 冻结/开发 环境检测 ────────────────────────────────────
+FROZEN = getattr(sys, "frozen", False)
 
-DATA_DIR = os.path.join(_QUICKDICT_DIR, "data")
+if FROZEN:
+    # PyInstaller 打包后: 临时解压目录（内置资源）
+    _BUNDLE_DIR = sys._MEIPASS  # type: ignore[attr-defined]
+    # exe 所在目录（外置数据）
+    _APP_DIR = os.path.dirname(sys.executable)
+else:
+    _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))  # quickdict/
+    _APP_DIR = os.path.dirname(_BUNDLE_DIR)  # 项目根目录
+
+# ── 路径常量 ──────────────────────────────────────────────
+# 内置资源（打包进 exe）
+ASSETS_DIR = os.path.join(_BUNDLE_DIR, "quickdict", "assets") if FROZEN else \
+             os.path.join(_BUNDLE_DIR, "assets")
+STYLES_DIR = os.path.join(_BUNDLE_DIR, "quickdict", "styles") if FROZEN else \
+             os.path.join(_BUNDLE_DIR, "styles")
+
+# 外置数据（与 exe 同级 data/ 目录，不打包进 exe）
+DATA_DIR = os.path.join(_APP_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "ecdict.db")
-DEFAULT_CSV = os.path.join(PROJECT_ROOT, "stardict", "stardict.csv")
+DEFAULT_CSV = os.path.join(_APP_DIR, "stardict", "stardict.csv")
 
 
 def ensure_db() -> str:

@@ -13,21 +13,9 @@ import sqlite3
 import sys
 import time
 
-# 将项目根目录加入 sys.path，以便导入 stardict
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
+from quickdict.config import DB_PATH, DEFAULT_CSV, DATA_DIR
 from quickdict._db_importer import import_csv_to_db
 from quickdict._lemma_builder import build_lemma_table
-
-
-def _default_csv_path() -> str:
-    return os.path.join(_PROJECT_ROOT, "stardict", "stardict.csv")
-
-
-def _default_db_path() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "ecdict.db")
 
 
 def _show_status(db_path: str):
@@ -54,8 +42,8 @@ def _show_status(db_path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Build ecdict.db from stardict.csv")
-    parser.add_argument("--csv", default=_default_csv_path(), help="Path to source CSV")
-    parser.add_argument("--db", default=_default_db_path(), help="Output SQLite db path")
+    parser.add_argument("--csv", default=DEFAULT_CSV, help="Path to source CSV")
+    parser.add_argument("--db", default=DB_PATH, help="Output SQLite db path")
     parser.add_argument("--force", action="store_true", help="Force rebuild (delete old db)")
     parser.add_argument("--status", action="store_true", help="Show database status and exit")
     args = parser.parse_args()

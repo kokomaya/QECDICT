@@ -12,8 +12,9 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
 from PyQt6.QtCore import Qt
 
-_ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-_ICON_PATH = os.path.join(_ASSETS_DIR, "icon.png")
+from quickdict.config import ASSETS_DIR
+
+_ICON_PATH = os.path.join(ASSETS_DIR, "icon.png")
 
 
 class TrayManager(QObject):

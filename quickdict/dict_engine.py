@@ -9,9 +9,15 @@ import sqlite3
 import sys
 from functools import lru_cache
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+from quickdict.config import FROZEN
+
+if FROZEN:
+    _STARDICT_DIR = sys._MEIPASS  # type: ignore[attr-defined]
+else:
+    _STARDICT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+if _STARDICT_DIR not in sys.path:
+    sys.path.insert(0, _STARDICT_DIR)
 
 from stardict import StarDict, stripword
 from quickdict._formatter import format_result
