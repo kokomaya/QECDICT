@@ -1,11 +1,15 @@
 @echo off
 chcp 65001 >nul
-echo ============================================
-echo   QuickDict 一键打包
-echo ============================================
-echo.
 
 cd /d "%~dp0"
+
+REM ── 读取版本号 ──────────────────────────────────────────
+for /f "tokens=*" %%v in ('.venv\Scripts\python -c "from quickdict.config import VERSION; print(VERSION)"') do set VER=%%v
+
+echo ============================================
+echo   QuickDict 一键打包  v%VER%
+echo ============================================
+echo.
 
 REM ── 前置检查 ────────────────────────────────────────────
 if not exist ".venv\Scripts\python.exe" (
@@ -41,11 +45,11 @@ if errorlevel 1 (
 echo        OK
 
 REM ── 准备发布目录 ────────────────────────────────────────
-set RELEASE_DIR=release
+set RELEASE_DIR=release\v%VER%
 set APP_DIR=%RELEASE_DIR%\QuickDict
 set DB_PKG=%RELEASE_DIR%\QuickDict-data
 
-echo [3/4] 整理发布目录 ...
+echo [3/4] 整理发布目录 (v%VER%) ...
 
 if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%APP_DIR%"
