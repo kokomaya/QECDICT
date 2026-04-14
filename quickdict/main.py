@@ -81,7 +81,6 @@ class QuickDictApp(QObject):
         self._settle_timer.timeout.connect(self._on_settle)
 
         # 轮询状态
-        self._last_poll_pos: tuple[int, int] = (0, 0)
         self._settle_pos: tuple[int, int] = (0, 0)
         self._anchor_pos: tuple[int, int] | None = None
         self._last_word: str | None = None
@@ -113,7 +112,7 @@ class QuickDictApp(QObject):
     def _on_activate(self):
         self._last_word = None
         self._anchor_pos = None
-        self._last_poll_pos = self._get_cursor_pos()
+        self._settle_pos = self._get_cursor_pos()
         self._word_zone_radius = self._WORD_ZONE_BASE_PX
         self._poll_timer.start()
         self._tray.set_capture_enabled(True)
@@ -162,17 +161,8 @@ class QuickDictApp(QObject):
     # ── 取词轮询 & 防抖 ──────────────────────────────────
 
     def _on_poll(self):
-        """高频检测鼠标位置，结合空间抖动过滤决定是否启动取词。"""
+        """高频检测鼠标位置，鼠标在某处静止足够久才触发取词。"""
         x, y = self._get_cursor_pos()
-        lx, ly = self._last_poll_pos
-        dist = ((x - lx) ** 2 + (y - ly) ** 2) ** 0.5
-
-        if dist < self._JITTER_PX:
-            # 微抖动，视为静止 → 放行 settle 定时器继续倒计时
-            return
-
-        # 鼠标发生了有意义的移动
-        self._last_poll_pos = (x, y)
 
         # 仍在当前词的空间区域内 → 无需重新取词
         if self._anchor_pos and self._last_word:
@@ -181,7 +171,15 @@ class QuickDictApp(QObject):
             if adist < self._word_zone_radius:
                 return
 
-        # 离开当前词区域（或尚无词） → 立即隐藏旧弹窗，重置 settle 等待
+        # 距 settle 起点的漂移量（用累计偏移代替逐帧偏移，避免慢速滑动时误触发）
+        sx, sy = self._settle_pos
+        drift = ((x - sx) ** 2 + (y - sy) ** 2) ** 0.5
+
+        if drift < self._JITTER_PX:
+            # 仍在 settle 起点附近 → 放行 settle 定时器继续倒计时
+            return
+
+        # 鼠标已漂移出 settle 起点 → 难开旧词区域，重新等待静止
         if self._last_word:
             self._popup.hide_popup()
             self._last_word = None
