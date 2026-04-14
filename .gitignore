@@ -4,3 +4,10 @@ __pycache__
 
 .venv/
 venv/
+
+temp/
+
+stardict/
+
+
+*.db
