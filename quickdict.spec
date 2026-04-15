@@ -15,6 +15,7 @@ from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 _ROOT = os.path.abspath(".")
+_UPX_DIR = os.path.join(_ROOT, "tools", "upx-4.2.4-win64")
 
 # 收集 rapidocr_onnxruntime 的模型文件（config.yaml + models/*.onnx）
 _rapidocr_datas = collect_data_files("rapidocr_onnxruntime", include_py_files=False)
@@ -58,17 +59,33 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=True,
+    upx_exclude=[],
     console=False,  # 无控制台窗口
     disable_windowed_traceback=False,
 )
+
+# UPX 无法安全压缩的文件（某些 C 扩展压缩后会 crash）
+_UPX_EXCLUDE = [
+    "vcruntime140.dll",
+    "ucrtbase.dll",
+    "msvcp140.dll",
+    "python3.dll",
+    "python312.dll",
+    "cv2.pyd",
+    "onnxruntime.dll",
+    "onnxruntime_pybind11_state.pyd",
+    "Qt6Core.dll",
+    "Qt6Gui.dll",
+    "Qt6Widgets.dll",
+]
 
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=False,
-    upx_exclude=[],
+    upx=True,
+    upx_exclude=_UPX_EXCLUDE,
     name="QuickDict",
 )

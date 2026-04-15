@@ -34,7 +34,8 @@ if errorlevel 1 (
 echo        OK
 
 REM ── 执行打包 ────────────────────────────────────────────
-echo [2/4] 打包 QuickDict.exe ...
+echo [2/4] 打包 QuickDict.exe (UPX 压缩) ...
+set PATH=%~dp0tools\upx-4.2.4-win64;%PATH%
 .venv\Scripts\pyinstaller quickdict.spec --noconfirm >nul 2>&1
 if errorlevel 1 (
     echo [错误] PyInstaller 打包失败
@@ -68,6 +69,52 @@ if not exist "使用说明.md" (
     exit /b 1
 )
 copy "使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
+
+REM ── 瘦身（删除当前未使用的大体积组件）────────────────────
+echo [3.5/4] 瘦身发布目录 ...
+
+REM OpenCV 视频编解码（本项目只做图像处理，不做视频解码）
+for %%f in ("%APP_DIR%\_internal\cv2\opencv_videoio_ffmpeg*.dll") do (
+    if exist "%%~f" del /q "%%~f"
+)
+
+REM Qt 翻译文件（不影响功能）
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\translations" (
+    rmdir /s /q "%APP_DIR%\_internal\PyQt6\Qt6\translations"
+)
+
+REM Qt PDF 运行库（项目未使用 QtPdf）
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Pdf.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Pdf.dll"
+)
+
+REM Qt PDF 图像插件（项目未使用）
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qpdf.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qpdf.dll"
+)
+
+REM Pillow AVIF 解码扩展（项目未读取 AVIF）
+for %%f in ("%APP_DIR%\_internal\PIL\_avif*.pyd") do (
+    if exist "%%~f" del /q "%%~f"
+)
+
+REM OpenGL 软件渲染回退（19.7 MB，项目不使用 3D / OpenGL）
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll"
+)
+
+REM Qt 网络模块（项目无网络请求功能）
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Network.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Network.dll"
+)
+
+REM 不需要的图片格式插件
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll"
+)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qtiff.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qtiff.dll"
+)
 
 echo        OK
 
