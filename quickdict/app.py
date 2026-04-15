@@ -72,7 +72,7 @@ class TrayManager(QObject):
             action.setData(key)
             action.triggered.connect(lambda checked, k=key: self.sig_trigger_mode_changed.emit(k))
             self._trigger_actions[key] = action
-        self._trigger_actions["hover"].setChecked(True)
+        self._trigger_actions["ctrl"].setChecked(True)
 
         self._menu.addSeparator()
         self._action_history = self._menu.addAction("查词历史（暂不支持）")

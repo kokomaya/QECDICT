@@ -46,8 +46,8 @@ DEFAULT_CSV = os.path.join(_APP_DIR, "stardict", "stardict.csv")
 # ── 用户设置持久化 ────────────────────────────────────────
 _SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 _DEFAULTS = {
-    "capture_mode": "auto",  # auto / uia / ocr
-    "trigger_mode": "hover",  # hover / ctrl
+    "capture_mode": "ocr",  # auto / uia / ocr
+    "trigger_mode": "ctrl",  # hover / ctrl
 }
 
 
