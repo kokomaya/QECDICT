@@ -167,6 +167,51 @@
 
 ---
 
+### Task 19: OCR 取词增强 — 复杂场景预处理
+- **目标**：提升复杂背景、特殊字体（倾斜/加粗/艺术字/下划线）下的 OCR 取词成功率
+- **产出文件**：更新 `quickdict/_ocr_capture.py`、更新 `quickdict/requirements.txt`
+- **详细方案**：[plan-ocrPreprocessEnhance.prompt.md](plan-ocrPreprocessEnhance.prompt.md)
+- **依赖**：Task 9（OCR 备用取词）
+- **预期效果**：困难场景命中率从 ~20-30% 提升至 ~65-85%；正常场景零退化
+- **子任务**：
+
+#### Task 19a: 添加 OpenCV 依赖 & 截图区域扩大
+- **步骤**：
+  1. `requirements.txt` 添加 `opencv-python>=4.8`（release 已捆绑 cv2）
+  2. 在虚拟环境安装：`pip install opencv-python>=4.8`
+  3. `_ocr_capture.py` 中扩大截图区域：`_HALF_W`: 160→200，`_HALF_H`: 60→80
+- **验收**：`import cv2` 不报错；截图区域正确扩大
+
+#### Task 19b: 图像预处理管线
+- **步骤**：
+  1. 在 `_ocr_capture.py` 中新增 `_preprocess_variants(img)` 方法
+  2. 接收 PIL Image，返回 numpy array 列表（多种预处理变体）：
+     - 变体①: 原图转 numpy（保持现有行为）
+     - 变体②: 灰度 + CLAHE 对比度增强（解决复杂背景/低对比度）
+     - 变体③: 灰度 + Otsu 二值化（解决艺术字/加粗笔画粘连）
+     - 变体④: 灰度 + 自适应阈值二值化（解决渐变背景/不均匀光照）
+     - 变体⑤: 形态学开运算去水平线 + 二值化（解决下划线干扰）
+  3. 每个变体用 try/except 包裹，单个失败不影响其他
+- **验收**：传入测试图片，返回 5 个不同的 numpy array
+
+#### Task 19c: 多策略重试 & 参数调优
+- **步骤**：
+  1. 修改 `capture()` 方法：截图一次 → 生成变体列表 → 依次对每个变体调用 `_recognize()` + `_pick_word()` → 首个有效结果即返回
+  2. 修改 RapidOCR 初始化参数：`det_box_thresh=0.3`、`det_unclip_ratio=2.0`
+  3. 降低代码中 `_MIN_CONFIDENCE`: 0.35 → 0.25
+  4. 添加 logger 记录命中的变体编号，便于后续分析
+- **验收**：复杂背景场景取词成功率明显提升；正常场景仍在变体①命中（日志可验证）
+
+#### Task 19d: 倾斜文字校正（可选）
+- **步骤**：
+  1. 在 `_preprocess_variants()` 中新增变体⑥：轻量仿射变换校正
+  2. 使用 `cv2.minAreaRect` 检测文本框倾斜角度
+  3. 对 ±5°~±30° 倾斜文本做仿射变换校正后二值化
+- **验收**：倾斜字幕场景取词成功率提升
+- **备注**：Phase 1-3 效果评估后决定是否实施
+
+---
+
 ### Task 12: LRU 缓存 & 异步查询
 - **目标**：避免重复查询，查询不阻塞 UI
 - **产出文件**：更新 `quickdict/dict_engine.py`、更新 `quickdict/main.py`
@@ -261,6 +306,12 @@ Task 1 (脚手架)
   Task 11 (Lemma) ── 依赖 Task 2, 3                   ├── Task 11 (Lemma)
   Task 12 (缓存)  ── 依赖 Task 3, 7                   └── Task 12 (缓存)
   
+  Task 19 (OCR增强) ── 依赖 Task 9
+    ├── 19a (OpenCV依赖+截图扩大)
+    ├── 19b (预处理管线) ── 依赖 19a
+    ├── 19c (多策略重试) ── 依赖 19b
+    └── 19d (倾斜校正)   ── 依赖 19b，可选
+
   Task 13 (发音)  ── 依赖 Task 6
   Task 14 (历史)  ── 依赖 Task 7
   Task 15 (打包)  ── 依赖全部 P0+P1
@@ -289,6 +340,10 @@ Task 1 (脚手架)
 | 13   | TTS 发音               | ❌ Reject |      |
 | 14   | 查词历史 & 生词本      | ❌ Reject  |      |
 | 15   | PyInstaller 打包       | ✅ 已完成  |      |
+| 19a  | OCR增强: OpenCV依赖+截图扩大 | ⬜ 未开始  | 依赖 Task 9 |
+| 19b  | OCR增强: 图像预处理管线      | ⬜ 未开始  | 依赖 19a |
+| 19c  | OCR增强: 多策略重试+参数调优 | ⬜ 未开始  | 依赖 19b |
+| 19d  | OCR增强: 倾斜文字校正        | ⬜ 未开始  | 可选，依赖 19b |
 | 16   | 划词翻译               | ⬜ 未开始  |      |
 | 17   | 全局搜索框             | ❌ Reject  |      |
 | 18   | 生词本导出 Anki        | ❌ Reject  |      |
