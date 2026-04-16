@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
+import httpx
 import openai
 
 from magic_mirror.interfaces.types import TextBlock, TranslatedBlock
@@ -33,13 +34,20 @@ class OpenAITranslator:
         timeout: int = 60,
         max_retries: int = 2,
         stream: bool = False,
+        ssl_verify: bool = True,
     ) -> None:
+        # 自签名证书场景：传入自定义 httpx 客户端禁用 SSL 验证
+        http_client = httpx.Client(
+            verify=ssl_verify,
+        ) if not ssl_verify else None
+
         self._client = openai.OpenAI(
             api_key=api_key or "unused",
             base_url=base_url,
             default_headers=headers or {},
             timeout=timeout,
             max_retries=max_retries,
+            http_client=http_client,
         )
         self._model = model
         self._timeout = timeout

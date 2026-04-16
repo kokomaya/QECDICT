@@ -44,6 +44,7 @@ def create_translator(provider_config: dict) -> ITranslator:
             timeout=provider_config.get("timeout", 60),
             max_retries=provider_config.get("max_retries", 2),
             stream=provider_config.get("stream", False),
+            ssl_verify=provider_config.get("ssl_verify", True),
         )
 
     raise ValueError(

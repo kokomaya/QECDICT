@@ -14,3 +14,4 @@ providers:
     timeout: 60
     max_retries: 2
     stream: false                                   # 是否启用 streaming
+    ssl_verify: false                                # 自签名证书设为 false

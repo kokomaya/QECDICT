@@ -29,11 +29,17 @@ def sample_background_color(
     """
     h, w = image.shape[:2]
 
-    # 将四角坐标转为轴对齐矩形
+    # 将四角坐标转为轴对齐矩形，clip 到图像范围内
     xs = [pt[0] for pt in bbox]
     ys = [pt[1] for pt in bbox]
-    x_min, x_max = int(min(xs)), int(max(xs))
-    y_min, y_max = int(min(ys)), int(max(ys))
+    x_min = max(int(min(xs)), 0)
+    x_max = min(int(max(xs)), w)
+    y_min = max(int(min(ys)), 0)
+    y_max = min(int(max(ys)), h)
+
+    # bbox 退化（宽或高为 0 或负）→ 返回灰色默认值
+    if x_max <= x_min or y_max <= y_min:
+        return (128, 128, 128, 255)
 
     # 向外扩展取样，clip 到图像边界
     ox1 = max(x_min - _EXPAND_PX, 0)
@@ -41,11 +47,15 @@ def sample_background_color(
     ox2 = min(x_max + _EXPAND_PX, w)
     oy2 = min(y_max + _EXPAND_PX, h)
 
+    # 扩展区域退化检查
+    if ox2 <= ox1 or oy2 <= oy1:
+        return (128, 128, 128, 255)
+
     # 内部区域（用于排除）
-    ix1 = max(x_min, 0)
-    iy1 = max(y_min, 0)
-    ix2 = min(x_max, w)
-    iy2 = min(y_max, h)
+    ix1 = max(x_min, ox1)
+    iy1 = max(y_min, oy1)
+    ix2 = min(x_max, ox2)
+    iy2 = min(y_max, oy2)
 
     # 创建外围 mask：外围区域 = 扩展矩形 - 内部矩形
     mask = np.zeros((oy2 - oy1, ox2 - ox1), dtype=np.uint8)
