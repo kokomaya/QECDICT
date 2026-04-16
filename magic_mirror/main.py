@@ -75,6 +75,30 @@ class _PipelineWorker(QRunnable):
             self.signals.error.emit(str(exc))
 
 
+class _PipelineWorkerWithCapture(QRunnable):
+    """已有截图结果时，跳过截图步骤执行后续管线。"""
+
+    class Signals(QObject):
+        finished = pyqtSignal(list, tuple)
+        error = pyqtSignal(str)
+
+    def __init__(self, pipeline: TranslatePipeline, capture_result) -> None:
+        super().__init__()
+        self.signals = self.Signals()
+        self._pipeline = pipeline
+        self._capture_result = capture_result
+
+    def run(self) -> None:
+        try:
+            render_blocks, screen_bbox = self._pipeline.execute_from_capture(
+                self._capture_result,
+            )
+            self.signals.finished.emit(render_blocks, screen_bbox)
+        except Exception as exc:
+            logger.exception("管线执行失败")
+            self.signals.error.emit(str(exc))
+
+
 # ------------------------------------------------------------------
 # 热键工具
 # ------------------------------------------------------------------
@@ -189,12 +213,19 @@ class StreamTranslateApp(QObject):
         bbox = (rect.x(), rect.y(), rect.width(), rect.height())
         logger.info("区域选定: %s", bbox)
 
+        # 先截图再显示 loading，避免 loading 文字被 OCR 识别
+        from magic_mirror.interfaces.types import CaptureResult
+        try:
+            capture_result = self._pipeline._capture.capture(bbox)
+        except Exception as exc:
+            logger.error("截图失败: %s", exc)
+            return
+
         self._loading.show_at(bbox)
 
-        worker = _PipelineWorker(self._pipeline, bbox)
+        worker = _PipelineWorkerWithCapture(self._pipeline, capture_result)
         worker.signals.finished.connect(self._on_pipeline_done)
         worker.signals.error.connect(self._on_pipeline_error)
-        # 防止 worker 被 GC
         self._current_worker = worker
         QThreadPool.globalInstance().start(worker)
 

@@ -78,3 +78,33 @@ class TranslatePipeline:
         logger.debug("  computed %d render blocks", len(render_blocks))
 
         return render_blocks, result.screen_bbox
+
+    def execute_from_capture(
+        self,
+        capture_result: CaptureResult,
+    ) -> Tuple[List[RenderBlock], Tuple[int, int, int, int]]:
+        """从已有截图结果执行管线（跳过截图步骤）。"""
+        result = capture_result
+
+        # 步骤 2: OCR
+        logger.debug("Pipeline step 2: recognize")
+        text_blocks = self._ocr.recognize(result.image)
+        logger.debug("  recognized %d text blocks", len(text_blocks))
+
+        if not text_blocks:
+            logger.info("OCR 未识别到文本，跳过翻译和排版")
+            return [], result.screen_bbox
+
+        # 步骤 3: 翻译
+        logger.debug("Pipeline step 3: translate %d blocks", len(text_blocks))
+        translated = self._translator.translate(text_blocks)
+        logger.debug("  translated %d blocks", len(translated))
+
+        # 步骤 4: 排版
+        logger.debug("Pipeline step 4: compute_layout")
+        render_blocks = self._layout.compute_layout(
+            translated, result.image, result.screen_bbox,
+        )
+        logger.debug("  computed %d render blocks", len(render_blocks))
+
+        return render_blocks, result.screen_bbox

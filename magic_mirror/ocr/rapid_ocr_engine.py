@@ -44,33 +44,49 @@ class RapidOcrEngine:
             return []
 
         variants = generate_variants(image)
-        seen_texts: set[str] = set()
-        blocks: List[TextBlock] = []
+        candidates: List[TextBlock] = []
+
+        # 第一个变体是原图，用于计算缩放比例
+        orig_h, orig_w = image.shape[:2]
 
         for variant in variants:
             raw = self._run_ocr(variant)
             if not raw:
                 continue
+
+            # 如果变体尺寸与原图不同，需要缩放 bbox 坐标回原图尺寸
+            vh, vw = variant.shape[:2]
+            scale_x = orig_w / vw if vw != orig_w else 1.0
+            scale_y = orig_h / vh if vh != orig_h else 1.0
+
             for bbox_points, text, confidence in raw:
                 text = text.strip()
                 if not text:
                     continue
                 if confidence < OCR_CONFIDENCE_THRESHOLD:
                     continue
-                if text in seen_texts:
-                    continue
-                seen_texts.add(text)
-                blocks.append(TextBlock(
+
+                # 缩放 bbox 回原图坐标
+                if scale_x != 1.0 or scale_y != 1.0:
+                    bbox_points = [
+                        [pt[0] * scale_x, pt[1] * scale_y]
+                        for pt in bbox_points
+                    ]
+
+                candidates.append(TextBlock(
                     text=text,
                     bbox=bbox_points,
                     font_size_est=self._estimate_font_size(bbox_points),
                     confidence=confidence,
                 ))
 
+        # 空间去重：重叠区域 IoU > 阈值时只保留置信度最高的
+        blocks = self._spatial_dedup(candidates)
+
         # 按 Y 坐标（bbox 左上角）排序，从上到下
         blocks.sort(key=lambda b: b.bbox[0][1])
 
-        logger.debug("OCR 识别到 %d 个文本块", len(blocks))
+        logger.debug("OCR 识别到 %d 个文本块 (候选 %d)", len(blocks), len(candidates))
         return blocks
 
     # ── 惰性加载 ──
@@ -110,6 +126,32 @@ class RapidOcrEngine:
     # ── 字号估算 ──
 
     @staticmethod
+    def _spatial_dedup(
+        candidates: List[TextBlock],
+        iou_threshold: float = 0.3,
+    ) -> List[TextBlock]:
+        """空间去重：对重叠的文本块只保留置信度最高的。
+
+        两个 bbox 的 IoU（交集/并集）超过阈值时认为重复。
+        """
+        # 按置信度降序排列，优先保留高置信度
+        sorted_cands = sorted(candidates, key=lambda b: b.confidence, reverse=True)
+        kept: List[TextBlock] = []
+
+        for cand in sorted_cands:
+            r1 = _bbox_to_rect(cand.bbox)
+            is_dup = False
+            for existing in kept:
+                r2 = _bbox_to_rect(existing.bbox)
+                if _iou(r1, r2) > iou_threshold:
+                    is_dup = True
+                    break
+            if not is_dup:
+                kept.append(cand)
+
+        return kept
+
+    @staticmethod
     def _estimate_font_size(bbox: list[list[float]]) -> float:
         """根据 bbox 高度估算字号（像素）。
 
@@ -117,3 +159,31 @@ class RapidOcrEngine:
         字号 ≈ 左上到左下的垂直距离。
         """
         return abs(bbox[3][1] - bbox[0][1])
+
+
+# ------------------------------------------------------------------
+# 模块级辅助
+# ------------------------------------------------------------------
+
+def _bbox_to_rect(bbox: list) -> tuple:
+    """四角坐标 → (x_min, y_min, x_max, y_max)。"""
+    xs = [pt[0] for pt in bbox]
+    ys = [pt[1] for pt in bbox]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _iou(r1: tuple, r2: tuple) -> float:
+    """计算两个轴对齐矩形的 IoU (Intersection over Union)。"""
+    x1 = max(r1[0], r2[0])
+    y1 = max(r1[1], r2[1])
+    x2 = min(r1[2], r2[2])
+    y2 = min(r1[3], r2[3])
+
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    if inter == 0:
+        return 0.0
+
+    area1 = (r1[2] - r1[0]) * (r1[3] - r1[1])
+    area2 = (r2[2] - r2[0]) * (r2[3] - r2[1])
+    union = area1 + area2 - inter
+    return inter / union if union > 0 else 0.0
