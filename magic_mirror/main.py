@@ -170,6 +170,12 @@ class StreamTranslateApp(QObject):
         self._listener.daemon = True
         self._listener.start()
 
+    def cleanup(self) -> None:
+        """退出时停止热键监听线程。"""
+        if hasattr(self, '_listener') and self._listener.is_alive():
+            self._listener.stop()
+            logger.debug("热键监听器已停止")
+
     @pyqtSlot()
     def _on_hotkey(self) -> None:
         """热键触发 → 关闭旧覆盖 → 启动框选。"""
@@ -264,6 +270,9 @@ def main() -> None:
         sys.exit(1)
 
     controller = StreamTranslateApp(pipeline)  # noqa: F841 — prevent GC
+
+    # 退出时清理 listener
+    app.aboutToQuit.connect(controller.cleanup)
 
     logger.info("Magic Mirror 已启动，按 %s 开始翻译", HOTKEY_TRIGGER)
     sys.exit(app.exec())
