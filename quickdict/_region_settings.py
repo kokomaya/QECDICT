@@ -1,31 +1,35 @@
 """
 _region_settings.py — 截图区域设置对话框。
 
-纯 PyQt6 实现，无额外依赖。包含尺寸/透明度调节滑块和实时预览面板。
+纯 PyQt6 实现，无额外依赖。包含尺寸/透明度调节滑块和透视预览面板，
+预览区域直接透视到对话框后方的真实屏幕内容。
 """
 
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF
-from PyQt6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QBrush
+from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPoint, QTimer
+from PyQt6.QtGui import QColor, QPainter, QPen, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
-    QGroupBox, QWidget, QPushButton,
+    QGroupBox, QWidget, QPushButton, QApplication,
 )
 
 
-# ── 预览面板 ──────────────────────────────────────────────
+# ── 透视预览面板 ──────────────────────────────────────────
 
 class _PreviewPanel(QWidget):
-    """缩放预览截图区域在屏幕中的相对大小和透明度效果。"""
+    """透视预览面板：显示对话框后方的真实屏幕内容，叠加截图区域填充效果。
 
-    _BG = QColor(40, 40, 50)
+    用户可以直观地观察不同透明度在真实屏幕内容上的视觉效果。
+    """
+
     _BORDER_COLOR = QColor(67, 97, 238, 160)
 
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(280, 180)
+        self.setMinimumSize(300, 200)
         self._half_w = 200
         self._half_h = 80
         self._opacity = 15
+        self._bg_pixmap: QPixmap | None = None
 
     def set_params(self, half_w: int, half_h: int, opacity: int):
         self._half_w = half_w
@@ -33,36 +37,63 @@ class _PreviewPanel(QWidget):
         self._opacity = opacity
         self.update()
 
+    def set_background(self, pixmap: QPixmap):
+        """设置背景截图（对话框后方的真实屏幕内容）。"""
+        self._bg_pixmap = pixmap
+        self.update()
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 深色背景模拟屏幕
-        p.fillRect(self.rect(), self._BG)
-
-        # 缩放: 让最大可能区域 (1000×600) 适配面板
         pw, ph = self.width(), self.height()
-        margin = 16
-        avail_w, avail_h = pw - margin * 2, ph - margin * 2
-        scale = min(avail_w / 1000, avail_h / 600)
 
-        # 截图区域矩形 (居中)
+        # 真实屏幕内容作为背景
+        if self._bg_pixmap and not self._bg_pixmap.isNull():
+            scaled = self._bg_pixmap.scaled(
+                pw, ph,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            p.drawPixmap(0, 0, scaled)
+        else:
+            p.fillRect(self.rect(), QColor(60, 60, 70))
+            p.setPen(QColor(120, 120, 120))
+            p.setFont(QFont("Microsoft YaHei", 9))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "（等待背景…）")
+            p.end()
+            return
+
+        # 按比例缩放截图区域，使最大区域 (1000×600) 占面板 ~85%
+        scale = min(pw * 0.85 / 1000, ph * 0.85 / 600)
         rw = self._half_w * 2 * scale
         rh = self._half_h * 2 * scale
         rx = (pw - rw) / 2
         ry = (ph - rh) / 2
+        region_rect = QRectF(rx, ry, rw, rh)
 
-        # 填充
+        # 区域外加深——突出区域内的透视效果
+        dim = QColor(0, 0, 0, 100)
+        # 上
+        p.fillRect(QRectF(0, 0, pw, ry), dim)
+        # 下
+        p.fillRect(QRectF(0, ry + rh, pw, ph - ry - rh), dim)
+        # 左
+        p.fillRect(QRectF(0, ry, rx, rh), dim)
+        # 右
+        p.fillRect(QRectF(rx + rw, ry, pw - rx - rw, rh), dim)
+
+        # 半透明填充叠加——真实效果预览
         fill = QColor(67, 97, 238, self._opacity)
-        p.fillRect(QRectF(rx, ry, rw, rh), fill)
+        p.fillRect(region_rect, fill)
 
         # 虚线边框
         pen = QPen(self._BORDER_COLOR, 2)
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.drawRect(QRectF(rx, ry, rw, rh))
+        p.drawRect(region_rect)
 
-        # 中心十字 (鼠标位置)
+        # 中心十字（鼠标位置）
         cx, cy = pw / 2, ph / 2
         cross = QPen(QColor(255, 80, 80, 200), 1.5)
         p.setPen(cross)
@@ -70,10 +101,13 @@ class _PreviewPanel(QWidget):
         p.drawLine(int(cx), int(cy - 8), int(cx), int(cy + 8))
 
         # 尺寸标注
-        p.setPen(QColor(180, 180, 180))
+        p.setPen(QColor(255, 255, 255, 220))
         p.setFont(QFont("Consolas", 9))
         label = f"{self._half_w * 2} × {self._half_h * 2}"
-        p.drawText(QRectF(rx, ry + rh + 2, rw, 20),
+        label_y = ry + rh + 4
+        if label_y + 16 > ph:
+            label_y = ry - 18
+        p.drawText(QRectF(rx, label_y, rw, 16),
                    Qt.AlignmentFlag.AlignCenter, label)
 
         p.end()
@@ -96,21 +130,27 @@ class RegionSettingsDialog(QDialog):
 
     def __init__(self, half_w: int = 200, half_h: int = 80, opacity: int = 15,
                  parent=None):
+        # 在对话框显示之前截取完整屏幕（此时对话框不会遮挡）
+        self._screen_pixmap = self._grab_full_screen()
+
         super().__init__(parent)
         self.setWindowTitle("截图区域设置")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        self.setFixedWidth(340)
+        self.setFixedWidth(360)
 
         self._init_half_w = half_w
         self._init_half_h = half_h
         self._init_opacity = opacity
+        self._bg_ready = False
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # ── 预览 ──
+        # ── 透视预览 ──
+        preview_row = QHBoxLayout()
         self._preview = _PreviewPanel()
-        layout.addWidget(self._preview)
+        preview_row.addWidget(self._preview, 1)
+        layout.addLayout(preview_row)
 
         # ── 宽度 ──
         grp_size = QGroupBox("区域尺寸（以鼠标为中心）")
@@ -216,3 +256,35 @@ class RegionSettingsDialog(QDialog):
         self._slider_w.setValue(self._init_half_w)
         self._slider_h.setValue(self._init_half_h)
         self._slider_op.setValue(self._init_opacity)
+
+    # ── 屏幕截取 ──
+
+    @staticmethod
+    def _grab_full_screen() -> QPixmap | None:
+        """在对话框显示之前截取完整屏幕。"""
+        screen = QApplication.primaryScreen()
+        if screen:
+            return screen.grabWindow(0)
+        return None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._bg_ready:
+            QTimer.singleShot(0, self._apply_background)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if self._bg_ready:
+            self._apply_background()
+
+    def _apply_background(self):
+        """将预览面板在屏幕上的位置映射到截图，裁剪为背景。"""
+        self._bg_ready = True
+        if not self._screen_pixmap:
+            return
+        pos = self._preview.mapToGlobal(QPoint(0, 0))
+        cropped = self._screen_pixmap.copy(
+            pos.x(), pos.y(),
+            self._preview.width(), self._preview.height(),
+        )
+        self._preview.set_background(cropped)
