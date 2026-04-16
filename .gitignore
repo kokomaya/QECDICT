@@ -20,3 +20,7 @@ dist/
 build/
 
 data/
+
+# StreamTranslate 敏感配置
+stream_translate/config/.env
+stream_translate/config/llm_providers.yaml

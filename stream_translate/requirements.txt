@@ -1,0 +1,10 @@
+PyQt6
+Pillow
+rapidocr-onnxruntime
+opencv-python-headless
+numpy
+pynput
+dxcam
+openai
+python-dotenv
+pyyaml
