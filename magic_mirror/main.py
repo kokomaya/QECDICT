@@ -5,7 +5,6 @@ Composition Root：这是整个项目中唯一 import 具体实现类的地方�
 
 from __future__ import annotations
 
-import ctypes
 import logging
 import sys
 from typing import List, Tuple
@@ -76,29 +75,43 @@ class _PipelineWorker(QRunnable):
 
 
 # ------------------------------------------------------------------
-# 热键解析
+# 热键工具
 # ------------------------------------------------------------------
 
-def _parse_hotkey(hotkey_str: str):
-    """将 'ctrl+alt+t' 格式字符串解析为 pynput 按键集合。"""
+def _normalize_key(key) -> str:
+    """将 pynput key 对象统一为可比较的字符串标签。
+
+    pynput 在不同事件中可能返回 Key.ctrl_l / Key.ctrl_r / KeyCode(vk=...) 等
+    不同对象，直接用 set 比较会失败。这里统一映射到小写字符串。
+    """
     from pynput.keyboard import Key, KeyCode
 
-    _KEY_MAP = {
-        "ctrl": Key.ctrl_l,
-        "alt": Key.alt_l,
-        "shift": Key.shift_l,
+    # 特殊键：ctrl_l/ctrl_r → "ctrl"
+    _SPECIAL_MAP = {
+        Key.ctrl_l: "ctrl", Key.ctrl_r: "ctrl",
+        Key.alt_l: "alt", Key.alt_r: "alt", Key.alt_gr: "alt",
+        Key.shift_l: "shift", Key.shift_r: "shift",
     }
+    if key in _SPECIAL_MAP:
+        return _SPECIAL_MAP[key]
 
-    keys = set()
+    # 普通字符键
+    if isinstance(key, KeyCode):
+        if key.char:
+            return key.char.lower()
+        if key.vk is not None:
+            # vk 65-90 = A-Z
+            if 65 <= key.vk <= 90:
+                return chr(key.vk).lower()
+    return str(key)
+
+
+def _parse_hotkey(hotkey_str: str) -> set:
+    """将 'ctrl+alt+t' 格式字符串解析为归一化标签集合。"""
+    labels = set()
     for part in hotkey_str.lower().split("+"):
-        part = part.strip()
-        if part in _KEY_MAP:
-            keys.add(_KEY_MAP[part])
-        elif len(part) == 1:
-            keys.add(KeyCode.from_char(part))
-        else:
-            logger.warning("未知热键部分: %s", part)
-    return keys
+        labels.add(part.strip())
+    return labels
 
 
 # ------------------------------------------------------------------
@@ -126,8 +139,9 @@ class StreamTranslateApp(QObject):
         self._sig_hotkey_triggered.connect(self._on_hotkey)
 
         # 热键监听
-        self._hotkey_keys = _parse_hotkey(HOTKEY_TRIGGER)
-        self._pressed_keys: set = set()
+        self._hotkey_labels = _parse_hotkey(HOTKEY_TRIGGER)
+        self._pressed_labels: set = set()
+        logger.debug("注册热键: %s → 标签集 %s", HOTKEY_TRIGGER, self._hotkey_labels)
         self._start_hotkey_listener()
 
         # 系统托盘
@@ -139,12 +153,17 @@ class StreamTranslateApp(QObject):
         from pynput.keyboard import Listener
 
         def on_press(key):
-            self._pressed_keys.add(key)
-            if self._hotkey_keys.issubset(self._pressed_keys):
+            label = _normalize_key(key)
+            self._pressed_labels.add(label)
+            logger.debug("key press: %s → label=%s, active=%s", key, label, self._pressed_labels)
+            if self._hotkey_labels.issubset(self._pressed_labels):
+                logger.info("热键匹配! 触发框选")
+                self._pressed_labels.clear()  # 防止重复触发
                 self._sig_hotkey_triggered.emit()
 
         def on_release(key):
-            self._pressed_keys.discard(key)
+            label = _normalize_key(key)
+            self._pressed_labels.discard(label)
 
         self._listener = Listener(on_press=on_press, on_release=on_release)
         self._listener.daemon = True
@@ -215,17 +234,11 @@ class StreamTranslateApp(QObject):
 # ------------------------------------------------------------------
 
 def main() -> None:
-    # Windows DPI 感知
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor V2
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
+    # 解析命令行参数
+    debug = "--debug" in sys.argv
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
