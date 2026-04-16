@@ -17,6 +17,13 @@ from quickdict.config import logger
 _HALF_W = 200
 _HALF_H = 80
 
+
+def set_region_size(half_w: int, half_h: int):
+    """动态更新截图区域的半宽/半高。"""
+    global _HALF_W, _HALF_H
+    _HALF_W = half_w
+    _HALF_H = half_h
+
 # OCR 置信度阈值
 _MIN_CONFIDENCE = 0.25
 
