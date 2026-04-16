@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import List, Tuple
 
 import numpy as np
+
+
+class TextAlignment(Enum):
+    """文本对齐方式"""
+
+    LEFT = "left"
+    CENTER = "center"
+    RIGHT = "right"
 
 
 @dataclass
@@ -38,6 +47,7 @@ class RenderBlock:
     font_size: int
     bg_color: Tuple[int, int, int, int]              # RGBA
     text_color: Tuple[int, int, int]                 # RGB
+    alignment: TextAlignment = TextAlignment.LEFT     # 文本对齐方式
 
 
 @dataclass

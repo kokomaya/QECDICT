@@ -1,24 +1,39 @@
 """颜色采样器 — 从截图中提取文本块的背景色和前景色。
 
 职责单一：只负责颜色采样，不涉及布局计算或文本渲染。
+背景色：外围环形区域 + 中值模糊 + 量化众数。
+前景色：K-Means (k=2) 聚类，选与背景差异最大的簇。
 """
 
 from __future__ import annotations
 
+import logging
 from typing import List, Tuple
 
 import cv2
 import numpy as np
 
-# 背景采样向外扩展像素数
-_EXPAND_PX = 4
+logger = logging.getLogger(__name__)
 
+# 背景采样向外扩展像素数（5-10px 范围，排除文字像素干扰）
+_EXPAND_PX = 8
+
+# K-Means 所需的最小像素数，不足时回退到亮度策略
+_MIN_PIXELS_FOR_KMEANS = 20
+
+
+# ------------------------------------------------------------------
+# 背景色采样
+# ------------------------------------------------------------------
 
 def sample_background_color(
     image: np.ndarray,
     bbox: List[List[float]],
 ) -> Tuple[int, int, int, int]:
-    """从 bbox 外围区域采样背景色。
+    """从 bbox 外围环形区域采样背景色。
+
+    策略：bbox 外围 8px 环形区域 → 中值模糊降噪 → 量化众数提取。
+    排除文字像素干扰，只采样背景区域。
 
     Args:
         image: BGR 格式截图 (H, W, 3)。
@@ -29,7 +44,6 @@ def sample_background_color(
     """
     h, w = image.shape[:2]
 
-    # 将四角坐标转为轴对齐矩形，clip 到图像范围内
     xs = [pt[0] for pt in bbox]
     ys = [pt[1] for pt in bbox]
     x_min = max(int(min(xs)), 0)
@@ -51,33 +65,24 @@ def sample_background_color(
     if ox2 <= ox1 or oy2 <= oy1:
         return (128, 128, 128, 255)
 
-    # 内部区域（用于排除）
-    ix1 = max(x_min, ox1)
-    iy1 = max(y_min, oy1)
-    ix2 = min(x_max, ox2)
-    iy2 = min(y_max, oy2)
-
-    # 创建外围 mask：外围区域 = 扩展矩形 - 内部矩形
-    mask = np.zeros((oy2 - oy1, ox2 - ox1), dtype=np.uint8)
-    mask[:, :] = 255
-    # 在 mask 中扣除内部区域
-    inner_y1 = iy1 - oy1
-    inner_y2 = iy2 - oy1
-    inner_x1 = ix1 - ox1
-    inner_x2 = ix2 - ox1
+    # 构建外围 mask：扩展矩形 − 内部矩形 = 只含背景的环
+    mask = np.ones((oy2 - oy1, ox2 - ox1), dtype=np.uint8) * 255
+    inner_y1 = max(y_min - oy1, 0)
+    inner_y2 = min(y_max - oy1, oy2 - oy1)
+    inner_x1 = max(x_min - ox1, 0)
+    inner_x2 = min(x_max - ox1, ox2 - ox1)
     if inner_y2 > inner_y1 and inner_x2 > inner_x1:
         mask[inner_y1:inner_y2, inner_x1:inner_x2] = 0
 
     region = image[oy1:oy2, ox1:ox2]
 
-    # 如果外围区域太小（mask 几乎无有效像素），回退到整个扩展区域
+    # 外围像素不足时回退到整个扩展区域
     if cv2.countNonZero(mask) < 4:
         mask[:, :] = 255
 
     # 中值模糊降噪
     blurred = cv2.medianBlur(region, 5)
 
-    # 取 mask 区域像素的众数
     pixels = blurred[mask > 0]  # shape: (N, 3), BGR
     if len(pixels) == 0:
         return (128, 128, 128, 255)
@@ -86,39 +91,108 @@ def sample_background_color(
     return (int(r), int(g), int(b), 255)
 
 
+# ------------------------------------------------------------------
+# 前景色采样
+# ------------------------------------------------------------------
+
 def sample_text_color(
     image: np.ndarray,
     bbox: List[List[float]],
     bg_color: Tuple[int, int, int, int],
 ) -> Tuple[int, int, int]:
-    """根据背景色计算前景文字颜色。
+    """从 bbox 内部区域提取前景文字颜色。
 
-    MVP 阶段使用简化策略：与背景色反色，确保对比度。
+    策略：K-Means (k=2) 聚类 bbox 内部像素，
+    选择与背景色欧氏距离最大的簇中心作为文字颜色。
+    支持彩色文字（链接蓝色、错误红色等）。
+
+    当内部像素不足或聚类失败时，回退到亮度策略。
 
     Args:
-        image: BGR 格式截图（当前未使用，保留接口以便后续升级为 K-Means）。
-        bbox: 四角坐标（保留接口）。
+        image: BGR 格式截图 (H, W, 3)。
+        bbox: 四角坐标 [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]。
         bg_color: 背景色 (R, G, B, A)。
 
     Returns:
         (R, G, B) 前景色。
     """
-    bg_r, bg_g, bg_b = bg_color[0], bg_color[1], bg_color[2]
+    h, w = image.shape[:2]
 
-    # 计算亮度 (ITU-R BT.601)
-    luminance = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+    xs = [pt[0] for pt in bbox]
+    ys = [pt[1] for pt in bbox]
+    x_min = max(int(min(xs)), 0)
+    x_max = min(int(max(xs)), w)
+    y_min = max(int(min(ys)), 0)
+    y_max = min(int(max(ys)), h)
 
-    # 亮背景 → 深色文字；暗背景 → 浅色文字
-    if luminance > 128:
-        return (0, 0, 0)
-    else:
-        return (255, 255, 255)
+    if x_max <= x_min or y_max <= y_min:
+        return _fallback_text_color(bg_color)
+
+    region = image[y_min:y_max, x_min:x_max]
+    pixels = region.reshape(-1, 3)  # (N, 3) BGR
+
+    if len(pixels) < _MIN_PIXELS_FOR_KMEANS:
+        return _fallback_text_color(bg_color)
+
+    try:
+        text_bgr = _kmeans_text_color(pixels, bg_color)
+        if text_bgr is None:
+            return _fallback_text_color(bg_color)
+        return (int(text_bgr[2]), int(text_bgr[1]), int(text_bgr[0]))  # BGR → RGB
+    except Exception:
+        logger.debug("K-Means 聚类失败，回退到亮度策略")
+        return _fallback_text_color(bg_color)
+
+
+# ------------------------------------------------------------------
+# 内部辅助
+# ------------------------------------------------------------------
+
+def _kmeans_text_color(
+    pixels: np.ndarray,
+    bg_color: Tuple[int, int, int, int],
+) -> np.ndarray | None:
+    """K-Means (k=2) 聚类，返回与背景差异最大的簇中心 (BGR)。
+
+    两个簇中心都太接近背景色时返回 None。
+    """
+    data = pixels.astype(np.float32)
+    criteria = (
+        cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
+        10,    # max iterations
+        1.0,   # epsilon
+    )
+    _, labels, centers = cv2.kmeans(
+        data, 2, None, criteria, 3, cv2.KMEANS_PP_CENTERS,
+    )
+
+    # bg_color 是 (R, G, B, A)，转为 BGR 用于距离计算
+    bg_bgr = np.array([bg_color[2], bg_color[1], bg_color[0]], dtype=np.float32)
+
+    # 选择与背景色欧氏距离最大的簇
+    dist0 = float(np.linalg.norm(centers[0] - bg_bgr))
+    dist1 = float(np.linalg.norm(centers[1] - bg_bgr))
+
+    best_dist = max(dist0, dist1)
+    # 两个簇都太接近背景 → 无法区分前景，返回 None 触发回退
+    if best_dist < 30:
+        return None
+
+    return centers[0] if dist0 > dist1 else centers[1]
+
+
+def _fallback_text_color(
+    bg_color: Tuple[int, int, int, int],
+) -> Tuple[int, int, int]:
+    """亮度策略回退：亮背景 → 黑字，暗背景 → 白字。"""
+    luminance = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
+    return (0, 0, 0) if luminance > 128 else (255, 255, 255)
 
 
 def _pixel_mode(pixels: np.ndarray) -> Tuple[int, int, int]:
     """取像素数组中出现最多的颜色 (BGR)。
 
-    将 RGB 量化到 8 级（减少噪声影响）后统计众数，
+    将 BGR 量化到 8 级（减少噪声影响）后统计众数，
     再取该簇的中值作为最终颜色。
     """
     # 量化：右移 5 位 (256 → 8 级)

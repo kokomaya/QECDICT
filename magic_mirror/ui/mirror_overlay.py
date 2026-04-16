@@ -2,18 +2,26 @@
 
 职责单一：只负责 RenderBlock 的屏幕绘制，
 不涉及翻译逻辑、排版计算或颜色采样。
+支持多行文本（translated_text 可包含 \\n）。
 """
 
 from __future__ import annotations
 
 from typing import List, Tuple
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QKeyEvent
+from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtGui import QColor, QFont, QPainter, QKeyEvent, QTextOption
 from PyQt6.QtWidgets import QWidget
 
 from magic_mirror.config.settings import FONT_FAMILY_ZH
-from magic_mirror.interfaces.types import RenderBlock
+from magic_mirror.interfaces.types import RenderBlock, TextAlignment
+
+# 映射 TextAlignment → Qt AlignmentFlag
+_ALIGN_MAP = {
+    TextAlignment.LEFT: Qt.AlignmentFlag.AlignLeft,
+    TextAlignment.CENTER: Qt.AlignmentFlag.AlignHCenter,
+    TextAlignment.RIGHT: Qt.AlignmentFlag.AlignRight,
+}
 
 
 class MirrorOverlay(QWidget):
@@ -99,14 +107,14 @@ class MirrorOverlay(QWidget):
             tc = block.text_color
             painter.setPen(QColor(tc[0], tc[1], tc[2]))
 
-            # 绘制文字
-            from PyQt6.QtCore import QRect
-            rect = QRect(lx, ly, block.width, block.height)
-            painter.drawText(
-                rect,
-                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-                block.translated_text,
-            )
+            # 根据对齐方式构建 QTextOption
+            h_align = _ALIGN_MAP.get(block.alignment, Qt.AlignmentFlag.AlignLeft)
+            text_opt = QTextOption(h_align | Qt.AlignmentFlag.AlignTop)
+            text_opt.setWrapMode(QTextOption.WrapMode.WordWrap)
+
+            # 绘制多行文本
+            rect = QRectF(lx, ly, block.width, block.height)
+            painter.drawText(rect, block.translated_text, text_opt)
 
         painter.end()
 

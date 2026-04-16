@@ -116,6 +116,7 @@ def _normalize_key(key) -> str:
         Key.ctrl_l: "ctrl", Key.ctrl_r: "ctrl",
         Key.alt_l: "alt", Key.alt_r: "alt", Key.alt_gr: "alt",
         Key.shift_l: "shift", Key.shift_r: "shift",
+        Key.esc: "escape",
     }
     if key in _SPECIAL_MAP:
         return _SPECIAL_MAP[key]
@@ -148,6 +149,8 @@ class StreamTranslateApp(QObject):
 
     # 用信号将热键线程的触发安全传回主线程
     _sig_hotkey_triggered = pyqtSignal()
+    _sig_close_last_overlay = pyqtSignal()      # Esc 关闭最近一个覆盖层
+    _sig_close_all_overlays = pyqtSignal()      # Ctrl+Shift+Esc 关闭全部
 
     def __init__(self, pipeline: TranslatePipeline, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -156,12 +159,14 @@ class StreamTranslateApp(QObject):
 
         # UI 组件
         self._selector = RegionSelector()
-        self._overlay = MirrorOverlay()
+        self._overlays: List[MirrorOverlay] = []   # 多覆盖层
         self._loading = LoadingIndicator()
 
         # 信号连接
         self._selector.sig_region_selected.connect(self._on_region_selected)
         self._sig_hotkey_triggered.connect(self._on_hotkey)
+        self._sig_close_last_overlay.connect(self._close_last_overlay)
+        self._sig_close_all_overlays.connect(self._close_all_overlays)
 
         # 热键监听
         self._hotkey_labels = _parse_hotkey(HOTKEY_TRIGGER)
@@ -175,16 +180,26 @@ class StreamTranslateApp(QObject):
     # ── 热键 ──
 
     def _start_hotkey_listener(self) -> None:
-        from pynput.keyboard import Listener
+        from pynput.keyboard import Key, Listener
 
         def on_press(key):
             label = _normalize_key(key)
             self._pressed_labels.add(label)
             logger.debug("key press: %s → label=%s, active=%s", key, label, self._pressed_labels)
+
+            # Ctrl+Alt+T → 新建翻译
             if self._hotkey_labels.issubset(self._pressed_labels):
                 logger.info("热键匹配! 触发框选")
-                self._pressed_labels.clear()  # 防止重复触发
+                self._pressed_labels.clear()
                 self._sig_hotkey_triggered.emit()
+            # Ctrl+Shift+Esc → 关闭全部覆盖层
+            elif {"ctrl", "shift", "escape"}.issubset(self._pressed_labels):
+                logger.info("关闭全部覆盖层")
+                self._pressed_labels.clear()
+                self._sig_close_all_overlays.emit()
+            # Esc → 关闭最近一个覆盖层
+            elif key == Key.esc:
+                self._sig_close_last_overlay.emit()
 
         def on_release(key):
             label = _normalize_key(key)
@@ -195,16 +210,37 @@ class StreamTranslateApp(QObject):
         self._listener.start()
 
     def cleanup(self) -> None:
-        """退出时停止热键监听线程。"""
+        """退出时停止热键监听线程，关闭所有覆盖层。"""
         if hasattr(self, '_listener') and self._listener.is_alive():
             self._listener.stop()
             logger.debug("热键监听器已停止")
+        for overlay in self._overlays:
+            overlay.close_overlay()
+        self._overlays.clear()
 
     @pyqtSlot()
     def _on_hotkey(self) -> None:
-        """热键触发 → 关闭旧覆盖 → 启动框选。"""
-        self._overlay.close_overlay()
+        """热键触发 → 启动框选（保留已有覆盖层）。"""
         self._selector.start()
+
+    @pyqtSlot()
+    def _close_last_overlay(self) -> None:
+        """Esc → 关闭最近一个覆盖层。"""
+        if self._overlays:
+            overlay = self._overlays.pop()
+            overlay.close_overlay()
+            overlay.deleteLater()
+            logger.debug("关闭最近覆盖层，剩余 %d 个", len(self._overlays))
+
+    @pyqtSlot()
+    def _close_all_overlays(self) -> None:
+        """关闭全部覆盖层。"""
+        for overlay in self._overlays:
+            overlay.close_overlay()
+            overlay.deleteLater()
+        count = len(self._overlays)
+        self._overlays.clear()
+        logger.info("已关闭全部 %d 个覆盖层", count)
 
     # ── 框选完成 ──
 
@@ -237,7 +273,13 @@ class StreamTranslateApp(QObject):
     ) -> None:
         self._loading.dismiss()
         if render_blocks:
-            self._overlay.render(render_blocks, screen_bbox)
+            overlay = MirrorOverlay()
+            overlay.render(render_blocks, screen_bbox)
+            self._overlays.append(overlay)
+            logger.info(
+                "翻译完成，共 %d 个覆盖层 (Esc 关闭最近 / Ctrl+Shift+Esc 关闭全部)",
+                len(self._overlays),
+            )
         else:
             logger.info("无翻译结果")
 
@@ -256,6 +298,10 @@ class StreamTranslateApp(QObject):
         act_translate = QAction("翻译区域 (Ctrl+Alt+T)", menu)
         act_translate.triggered.connect(self._on_hotkey)
         menu.addAction(act_translate)
+
+        act_close_all = QAction("关闭全部覆盖层 (Ctrl+Shift+Esc)", menu)
+        act_close_all.triggered.connect(self._close_all_overlays)
+        menu.addAction(act_close_all)
 
         menu.addSeparator()
 
