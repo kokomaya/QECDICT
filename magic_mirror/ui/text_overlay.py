@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QTextEdit, QVBoxLayout, QWidget
 
 from magic_mirror.config.settings import FONT_FAMILY_ZH
 from magic_mirror.interfaces.types import RenderBlock
+from magic_mirror.ui.context_preview import ContextPreviewPanel
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ class TextOverlay(QWidget):
         self._render_blocks: List[RenderBlock] = []
         self._win_x = 0
         self._win_y = 0
+
+        # 上下文预览面板
+        self._preview = ContextPreviewPanel()
 
         # 只读文本编辑器 — 支持跨行自由选中
         self._editor = QTextEdit(self)
@@ -59,11 +63,14 @@ class TextOverlay(QWidget):
             screen_bbox[0], screen_bbox[1],
             screen_bbox[2], screen_bbox[3],
         )
+        self._preview.clear_texts()
+        self._preview.position_beside(screen_bbox)
 
     def add_block(self, block: RenderBlock) -> None:
         """添加一个渲染块的文本内容。"""
         self._render_blocks.append(block)
         self._rebuild_content()
+        self._preview.add_text(block.translated_text)
         if not self.isVisible():
             self.show()
             self.raise_()
@@ -72,6 +79,7 @@ class TextOverlay(QWidget):
         """关闭并清理覆盖层。"""
         self._render_blocks.clear()
         self._editor.clear()
+        self._preview.close_panel()
         self.hide()
 
     def clear(self) -> None:

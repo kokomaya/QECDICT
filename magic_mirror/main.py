@@ -481,6 +481,7 @@ class StreamTranslateApp(QObject):
         # 清空已有内容，保留 overlay 对象
         overlay._render_blocks.clear()
         overlay._skeletons.clear()
+        overlay._preview.clear_texts()
         overlay.update()
 
         # 截图
