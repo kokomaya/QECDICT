@@ -50,6 +50,8 @@ class MirrorOverlay(QWidget):
 
     # 用户请求对此覆盖层区域重新翻译
     sig_retranslate = pyqtSignal(tuple)   # screen_bbox (x, y, w, h)
+    # 用户请求打开智能对话
+    sig_open_chat = pyqtSignal(str)       # context_text
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -199,7 +201,7 @@ class MirrorOverlay(QWidget):
             super().mousePressEvent(event)
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
-        """右键菜单：复制所有文本 / 重新翻译 / 关闭。"""
+        """右键菜单：复制所有文本 / 重新翻译 / 智能对话 / 关闭。"""
         menu = QMenu(self)
 
         act_copy = menu.addAction("复制全部译文")
@@ -209,6 +211,9 @@ class MirrorOverlay(QWidget):
 
         act_retranslate = menu.addAction("重新翻译")
         act_retranslate.triggered.connect(self._request_retranslate)
+
+        act_chat = menu.addAction("智能对话")
+        act_chat.triggered.connect(self._open_chat)
 
         menu.addSeparator()
 
@@ -299,6 +304,12 @@ class MirrorOverlay(QWidget):
         """发射重新翻译信号。"""
         bbox = (self._win_x, self._win_y, self.width(), self.height())
         self.sig_retranslate.emit(bbox)
+
+    def _open_chat(self) -> None:
+        """发射智能对话信号，携带当前所有文本。"""
+        texts = [b.translated_text for b in self._render_blocks]
+        if texts:
+            self.sig_open_chat.emit("\n".join(texts))
 
 
 # ------------------------------------------------------------------

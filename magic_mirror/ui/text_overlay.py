@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QKeyEvent
 from PyQt6.QtWidgets import QApplication, QMenu, QTextEdit, QVBoxLayout, QWidget
 
@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 class TextOverlay(QWidget):
     """OCR 文本覆盖层 — 无边框置顶窗口，文本可选中复制。"""
+
+    # 用户请求打开智能对话
+    sig_open_chat = pyqtSignal(str)       # context_text
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -124,6 +127,11 @@ class TextOverlay(QWidget):
 
         menu.addSeparator()
 
+        act_chat = menu.addAction("智能对话")
+        act_chat.triggered.connect(self._open_chat)
+
+        menu.addSeparator()
+
         act_close = menu.addAction("关闭")
         act_close.triggered.connect(self.close_overlay)
 
@@ -139,6 +147,12 @@ class TextOverlay(QWidget):
         if text:
             QApplication.clipboard().setText(text)
             logger.debug("已复制全部文本到剪贴板")
+
+    def _open_chat(self) -> None:
+        """发射智能对话信号，携带当前所有文本。"""
+        text = self._editor.toPlainText()
+        if text:
+            self.sig_open_chat.emit(text)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:

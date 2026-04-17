@@ -28,6 +28,7 @@ from magic_mirror.translation.provider_factory import create_translator_from_con
 from magic_mirror.ui.loading_indicator import LoadingIndicator
 from magic_mirror.ui.mirror_overlay import MirrorOverlay
 from magic_mirror.ui.text_overlay import TextOverlay
+from magic_mirror.ui.chat_dialog import ChatDialog
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +365,7 @@ class StreamTranslateApp(QObject):
         overlay = MirrorOverlay()
         overlay.init_geometry(bbox)
         overlay.sig_retranslate.connect(self._on_retranslate)
+        overlay.sig_open_chat.connect(self._on_open_chat)
         self._overlays.append(overlay)
         self._current_overlay = overlay
 
@@ -383,6 +385,7 @@ class StreamTranslateApp(QObject):
 
         overlay = TextOverlay()
         overlay.init_geometry(bbox)
+        overlay.sig_open_chat.connect(self._on_open_chat)
         self._overlays.append(overlay)
         self._current_overlay = overlay
 
@@ -499,6 +502,20 @@ class StreamTranslateApp(QObject):
         worker.signals.error.connect(self._on_pipeline_error)
         self._current_worker = worker
         QThreadPool.globalInstance().start(worker)
+
+    # ── 智能对话 ──
+
+    @pyqtSlot(str)
+    def _on_open_chat(self, context_text: str) -> None:
+        """覆盖层右键菜单「智能对话」→ 打开聊天窗口。"""
+        dialog = ChatDialog(context_text)
+        # 防止 GC 回收
+        if not hasattr(self, "_chat_dialogs"):
+            self._chat_dialogs: List = []
+        self._chat_dialogs.append(dialog)
+        dialog.finished.connect(lambda: self._chat_dialogs.remove(dialog))
+        dialog.show()
+        logger.info("打开智能对话窗口 (上下文 %d 字符)", len(context_text))
 
     # ── 系统托盘 ──
 
