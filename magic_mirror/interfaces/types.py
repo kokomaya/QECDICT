@@ -48,6 +48,7 @@ class RenderBlock:
     bg_color: Tuple[int, int, int, int]              # RGBA
     text_color: Tuple[int, int, int]                 # RGB
     alignment: TextAlignment = TextAlignment.LEFT     # 文本对齐方式
+    source_text: str = ""                             # OCR 原文（用于对照预览）
 
 
 @dataclass

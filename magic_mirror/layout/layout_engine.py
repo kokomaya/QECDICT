@@ -92,6 +92,9 @@ class DefaultLayoutEngine:
                 screenshot, all_bboxes, bg_color,
             )
 
+            # 合并原文（用于对照预览）
+            merged_source = "\n".join(b.source.text for b in para)
+
             results.append(RenderBlock(
                 screen_x=sx,
                 screen_y=sy,
@@ -102,6 +105,7 @@ class DefaultLayoutEngine:
                 bg_color=bg_color,
                 text_color=text_color,
                 alignment=alignment,
+                source_text=merged_source,
             ))
 
         return results

@@ -9,15 +9,16 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import List, Tuple
 
 from PyQt6.QtCore import QRectF, Qt, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QKeyEvent, QMouseEvent, QTextOption
+from PyQt6.QtGui import QColor, QEnterEvent, QFont, QPainter, QKeyEvent, QMouseEvent, QTextOption
 from PyQt6.QtWidgets import QApplication, QMenu, QWidget
 
 from magic_mirror.config.settings import FONT_FAMILY_ZH
 from magic_mirror.interfaces.types import RenderBlock, TextAlignment, TextBlock
+from magic_mirror.ui._overlay_interaction import OverlayInteraction
+from magic_mirror.ui._skeleton_painter import SkeletonPainter, SkeletonRect
 from magic_mirror.ui.context_preview import ContextPreviewPanel
 
 logger = logging.getLogger(__name__)
@@ -29,25 +30,12 @@ _ALIGN_MAP = {
     TextAlignment.RIGHT: Qt.AlignmentFlag.AlignRight,
 }
 
-# 骨架屏配色
-_SKELETON_BG = QColor(200, 200, 200, 180)
-_SKELETON_PULSE = QColor(180, 180, 180, 180)
-
 # 错误提示配色
 _ERROR_BG = QColor(220, 38, 38, 200)
 _ERROR_TEXT = QColor(255, 255, 255)
 
 # 淡入动画时长 (ms)
 _FADE_IN_DURATION = 250
-
-
-@dataclass
-class _SkeletonRect:
-    """骨架屏占位矩形（局部坐标）。"""
-    x: int
-    y: int
-    w: int
-    h: int
 
 
 class MirrorOverlay(QWidget):
@@ -57,6 +45,8 @@ class MirrorOverlay(QWidget):
     sig_retranslate = pyqtSignal(tuple)   # screen_bbox (x, y, w, h)
     # 用户请求打开智能对话
     sig_open_chat = pyqtSignal(str)       # context_text
+    # 覆盖层拖拽 / 缩放后几何变化
+    sig_geometry_changed = pyqtSignal(tuple)   # (x, y, w, h)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -67,17 +57,23 @@ class MirrorOverlay(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # 不设置 WA_TransparentForMouseEvents：需要接收右键事件。
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         self._render_blocks: List[RenderBlock] = []
-        self._skeletons: List[_SkeletonRect] = []
         self._block_opacity: float = 1.0           # 用于淡入动画
         self._fade_anim: QVariantAnimation | None = None
         self._win_x = 0
         self._win_y = 0
 
+        # 骨架屏绘制（shimmer 动画）
+        self._skeleton_painter = SkeletonPainter(self)
+        # 拖拽 / 缩放交互
+        self._interaction = OverlayInteraction(self, self._sync_preview)
         # 上下文预览面板
         self._preview = ContextPreviewPanel()
         self._error_msg: str | None = None   # 错误提示文本
+        self._peeking: bool = False          # Space 键"透视"原文模式
 
     # ------------------------------------------------------------------
     # 公开 API
@@ -90,7 +86,7 @@ class MirrorOverlay(QWidget):
     ) -> None:
         """显示覆盖层并渲染翻译文本块。"""
         self._render_blocks = render_blocks
-        self._skeletons = []
+        self._skeleton_painter.clear()
         self._win_x = screen_bbox[0]
         self._win_y = screen_bbox[1]
 
@@ -109,7 +105,7 @@ class MirrorOverlay(QWidget):
         所有权链导致覆盖层随 loading 一起被隐藏。
         """
         self._render_blocks = []
-        self._skeletons = []
+        self._skeleton_painter.clear()
         self._win_x = screen_bbox[0]
         self._win_y = screen_bbox[1]
         self.setGeometry(
@@ -131,7 +127,7 @@ class MirrorOverlay(QWidget):
             screen_bbox: 截图对应的屏幕区域 (x, y, w, h)。
         """
         screen_x0, screen_y0 = screen_bbox[0], screen_bbox[1]
-        self._skeletons = []
+        rects: List[SkeletonRect] = []
         for tb in text_blocks:
             xs = [pt[0] for pt in tb.bbox]
             ys = [pt[1] for pt in tb.bbox]
@@ -139,12 +135,13 @@ class MirrorOverlay(QWidget):
             top = int(min(ys))
             w = max(int(max(xs)) - left, 1)
             h = max(int(max(ys)) - top, 1)
-            # OCR bbox 是相对截图的，加上 screen_bbox 偏移后再减去窗口坐标
-            self._skeletons.append(_SkeletonRect(
-                x=screen_x0 + left - self._win_x,
-                y=screen_y0 + top - self._win_y,
+            # OCR bbox 是相对截图的，加上 screen_bbox 偏移转为屏幕坐标
+            rects.append(SkeletonRect(
+                screen_x=screen_x0 + left,
+                screen_y=screen_y0 + top,
                 w=w, h=h,
             ))
+        self._skeleton_painter.set_rects(rects)
         self.show()
         self.raise_()
         self.update()
@@ -152,15 +149,12 @@ class MirrorOverlay(QWidget):
     def add_block(self, block: RenderBlock) -> None:
         """增量添加一个渲染块，移除对应骨架并触发淡入。"""
         # 移除与新块位置重叠的骨架
-        lx = block.screen_x - self._win_x
-        ly = block.screen_y - self._win_y
-        self._skeletons = [
-            s for s in self._skeletons
-            if not _rects_overlap(s.x, s.y, s.w, s.h, lx, ly, block.width, block.height)
-        ]
+        self._skeleton_painter.remove_overlapping(
+            block.screen_x, block.screen_y, block.width, block.height,
+        )
 
         self._render_blocks.append(block)
-        self._preview.add_text(block.translated_text)
+        self._preview.add_text(block.translated_text, block.source_text)
         if not self.isVisible():
             self.show()
             self.raise_()
@@ -169,7 +163,7 @@ class MirrorOverlay(QWidget):
     def show_error(self, msg: str) -> None:
         """在覆盖层上显示错误提示，替换骨架屏。"""
         self._error_msg = msg
-        self._skeletons.clear()
+        self._skeleton_painter.clear()
         if not self.isVisible():
             self.show()
             self.raise_()
@@ -178,7 +172,7 @@ class MirrorOverlay(QWidget):
     def close_overlay(self) -> None:
         """关闭并隐藏覆盖层。"""
         self._render_blocks = []
-        self._skeletons = []
+        self._skeleton_painter.clear()
         self._error_msg = None
         self._preview.close_panel()
         self.hide()
@@ -215,12 +209,47 @@ class MirrorOverlay(QWidget):
     # Qt 事件
     # ------------------------------------------------------------------
 
+    def enterEvent(self, event: QEnterEvent) -> None:  # noqa: N802
+        """鼠标进入覆盖层 → 激活窗口并获取键盘焦点（使 Space 透视可用）。"""
+        self.activateWindow()
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        super().enterEvent(event)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """左键忽略（穿透），右键由 contextMenuEvent 处理。"""
+        """Alt+左键拖拽 / 边缘 resize / 其余左键忽略穿透。"""
+        if self._interaction.on_mouse_press(event):
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             event.ignore()
         else:
             super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """拖拽 / resize 过程中更新位置，或更新边缘光标形状。"""
+        if not self._interaction.on_mouse_move(event):
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """结束拖拽 / resize。"""
+        if not self._interaction.on_mouse_release(event):
+            super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """双击自动扩展覆盖层至适合所有内容的大小。"""
+        if event.button() != Qt.MouseButton.LeftButton or not self._render_blocks:
+            super().mouseDoubleClickEvent(event)
+            return
+        min_x = min(b.screen_x for b in self._render_blocks)
+        min_y = min(b.screen_y for b in self._render_blocks)
+        max_x = max(b.screen_x + b.width for b in self._render_blocks)
+        max_y = max(b.screen_y + b.height for b in self._render_blocks)
+        pad = 8
+        self.setGeometry(
+            min_x - pad, min_y - pad,
+            max_x - min_x + 2 * pad, max_y - min_y + 2 * pad,
+        )
+        self._sync_preview()
+        self.update()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         """右键菜单：复制所有文本 / 重新翻译 / 智能对话 / 关闭。"""
@@ -245,6 +274,10 @@ class MirrorOverlay(QWidget):
         menu.exec(event.globalPos())
 
     def paintEvent(self, event) -> None:  # noqa: N802
+        # Space 键透视模式：不绘制任何内容，露出原文
+        if self._peeking:
+            return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
@@ -254,16 +287,8 @@ class MirrorOverlay(QWidget):
             painter.end()
             return
 
-        # ── 绘制骨架占位条 ──
-        for skel in self._skeletons:
-            painter.fillRect(skel.x, skel.y, skel.w, skel.h, _SKELETON_BG)
-            # 内嵌一条略深的脉冲条模拟加载效果
-            pulse_w = max(skel.w // 3, 4)
-            painter.fillRect(
-                skel.x + 2, skel.y + 2,
-                pulse_w, max(skel.h - 4, 1),
-                _SKELETON_PULSE,
-            )
+        # ── 绘制骨架占位条（shimmer 动画） ──
+        self._skeleton_painter.paint(painter)
 
         if not self._render_blocks:
             painter.end()
@@ -282,8 +307,8 @@ class MirrorOverlay(QWidget):
         self, painter: QPainter, block: RenderBlock, opacity: float,
     ) -> None:
         """绘制单个翻译文本块。"""
-        lx = block.screen_x - self._win_x
-        ly = block.screen_y - self._win_y
+        lx = block.screen_x - self.x()
+        ly = block.screen_y - self.y()
 
         # 背景矩形（带不透明度调制）
         bg = block.bg_color
@@ -314,8 +339,22 @@ class MirrorOverlay(QWidget):
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
             self.close_overlay()
+        elif event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            # Space 按住 → 临时隐藏覆盖层内容（"透视"原文）
+            self._peeking = True
+            self._preview.hide()
+            self.update()
         else:
             super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self._peeking = False
+            if self._preview.has_content:
+                self._preview.show()
+            self.update()
+        else:
+            super().keyReleaseEvent(event)
 
     # ------------------------------------------------------------------
     # 右键菜单操作
@@ -338,6 +377,12 @@ class MirrorOverlay(QWidget):
         texts = [b.translated_text for b in self._render_blocks]
         if texts:
             self.sig_open_chat.emit("\n".join(texts))
+
+    def _sync_preview(self) -> None:
+        """拖拽 / 缩放后同步 ContextPreviewPanel 位置并发射信号。"""
+        bbox = (self.x(), self.y(), self.width(), self.height())
+        self._preview.position_beside(bbox)
+        self.sig_geometry_changed.emit(bbox)
 
     def _paint_error(self, painter: QPainter) -> None:
         """在覆盖层中央绘制错误提示条。"""
@@ -365,15 +410,3 @@ class MirrorOverlay(QWidget):
             bar_x + pad_x, bar_y + pad_y + fm.ascent(),
             text,
         )
-
-
-# ------------------------------------------------------------------
-# 辅助
-# ------------------------------------------------------------------
-
-def _rects_overlap(
-    x1: int, y1: int, w1: int, h1: int,
-    x2: int, y2: int, w2: int, h2: int,
-) -> bool:
-    """两个矩形是否有重叠区域。"""
-    return not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1)
