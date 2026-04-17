@@ -17,5 +17,5 @@ SELECTOR_BORDER_COLOR = (0, 120, 215)       # 框选边框颜色 RGB
 
 # ── 排版 ──
 FONT_FAMILY_ZH = "Microsoft YaHei"         # 中文渲染字体
-FONT_SIZE_SCALE = 0.85                      # 中文字号相对英文的缩放系数
+FONT_SIZE_SCALE = 1.0                       # 字号像素缩放系数（1.0 = OCR bbox 高度）
 MAX_FONT_SHRINK_RATIO = 0.6                 # 最大字号缩小比例

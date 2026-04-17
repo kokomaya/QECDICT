@@ -83,16 +83,14 @@ class DefaultLayoutEngine:
             )
 
             final_w = max(merged_w, min(render_w, int(merged_w * _MAX_WIDTH_EXPAND)))
+            final_h = merged_h
 
-            # 确保高度足够容纳中文文本（中文行高 > 英文行高）
-            font = QFont(FONT_FAMILY_ZH, font_size)
-            fm = QFontMetrics(font)
-            needed_h = fm.lineSpacing() * n_lines
-            final_h = max(merged_h, needed_h)
-
-            # ── 颜色采样（用第一个块的 bbox 采样） ──
+            # ── 颜色采样（合并所有子块区域） ──
+            all_bboxes = [b.source.bbox for b in para]
             bg_color = sample_background_color(screenshot, first_src.bbox)
-            text_color = sample_text_color(screenshot, first_src.bbox, bg_color)
+            text_color = _sample_merged_text_color(
+                screenshot, all_bboxes, bg_color,
+            )
 
             results.append(RenderBlock(
                 screen_x=sx,
@@ -277,21 +275,24 @@ def _fit_font_size(
     Returns:
         (final_font_size, max_line_render_width)
     """
-    base_size = max(int(font_size_est * FONT_SIZE_SCALE), 8)
-    min_size = max(int(base_size * MAX_FONT_SHRINK_RATIO), 8)
+    # pixelSize 的 fm.height() > pixelSize（含 descent），所以上界需放大
+    base_size = max(int(font_size_est * FONT_SIZE_SCALE * 1.4), 8)
+    min_size = max(int(font_size_est * FONT_SIZE_SCALE * MAX_FONT_SHRINK_RATIO), 8)
 
     lines = text.split("\n")
 
     def _fits(size: int) -> Tuple[bool, int]:
         """检查字号是否在 bbox 内不溢出，返回 (是否fit, 最宽行宽)。"""
-        w = _max_line_width(lines, size)
+        font = QFont(FONT_FAMILY_ZH)
+        font.setPixelSize(size)
+        fm = QFontMetrics(font)
+        w = max(fm.horizontalAdvance(line) for line in lines)
         if w > bbox_width:
             return False, w
-        # 高度检查：中文行高 > 拉丁行高，必须用 QFontMetrics 精确测量
+        # 高度检查：单行用 ascent+descent，多行加行距
         if bbox_height > 0:
-            font = QFont(FONT_FAMILY_ZH, size)
-            fm = QFontMetrics(font)
-            total_h = fm.lineSpacing() * len(lines)
+            n = len(lines)
+            total_h = fm.height() if n == 1 else fm.height() + fm.lineSpacing() * (n - 1)
             if total_h > bbox_height:
                 return False, w
         return True, w
@@ -319,8 +320,31 @@ def _fit_font_size(
     return best_size, best_w
 
 
-def _max_line_width(lines: list[str], font_size: int) -> int:
-    """测量多行文本中最宽一行的渲染宽度。"""
-    font = QFont(FONT_FAMILY_ZH, font_size)
-    fm = QFontMetrics(font)
-    return max(fm.horizontalAdvance(line) for line in lines)
+# ------------------------------------------------------------------
+# 颜色采样辅助
+# ------------------------------------------------------------------
+
+def _sample_merged_text_color(
+    screenshot: np.ndarray,
+    bboxes: List[list],
+    bg_color: Tuple[int, int, int, int],
+) -> Tuple[int, int, int]:
+    """从段落内所有子块的 bbox 采样前景色，取与背景差异最大的颜色。
+
+    逐块调用 sample_text_color，选与 bg_color 欧氏距离最远者。
+    """
+    best_color: Tuple[int, int, int] = (0, 0, 0)
+    best_dist = -1.0
+
+    for bbox in bboxes:
+        tc = sample_text_color(screenshot, bbox, bg_color)
+        dist = (
+            (tc[0] - bg_color[0]) ** 2
+            + (tc[1] - bg_color[1]) ** 2
+            + (tc[2] - bg_color[2]) ** 2
+        ) ** 0.5
+        if dist > best_dist:
+            best_dist = dist
+            best_color = tc
+
+    return best_color
