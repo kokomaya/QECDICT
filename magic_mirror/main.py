@@ -370,7 +370,7 @@ class StreamTranslateApp(QObject):
 
     def _run_ocr_copy(self, capture_result, bbox: tuple) -> None:
         """OCR 提取模式：OCR → 复制到剪贴板。"""
-        self._loading.show_at(bbox)
+        self._loading.show_at(bbox, hint="识别中...")
 
         worker = _OcrCopyWorker(self._pipeline, capture_result)
         worker.signals.finished.connect(self._on_ocr_copy_done)

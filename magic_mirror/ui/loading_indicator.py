@@ -37,6 +37,7 @@ class LoadingIndicator(QWidget):
         self.setFixedSize(_INDICATOR_SIZE, _INDICATOR_SIZE)
 
         self._angle = 0
+        self._hint_text = "翻译中..."
 
         # 旋转定时器
         self._timer = QTimer(self)
@@ -52,16 +53,18 @@ class LoadingIndicator(QWidget):
     # 公开 API
     # ------------------------------------------------------------------
 
-    def show_at(self, screen_bbox: Tuple[int, int, int, int]) -> None:
+    def show_at(self, screen_bbox: Tuple[int, int, int, int], hint: str = "翻译中...") -> None:
         """在 screen_bbox 区域中心显示加载动画。
 
         Args:
             screen_bbox: (x, y, w, h) 屏幕区域。
+            hint: 提示文字。
         """
         cx = screen_bbox[0] + screen_bbox[2] // 2
         cy = screen_bbox[1] + screen_bbox[3] // 2
         self.move(cx - _INDICATOR_SIZE // 2, cy - _INDICATOR_SIZE // 2)
 
+        self._hint_text = hint
         self._opacity_effect.setOpacity(1.0)
         self._angle = 0
         self._timer.start()
@@ -115,12 +118,12 @@ class LoadingIndicator(QWidget):
         painter.setPen(pen)
         painter.drawArc(arc_rect, self._angle * 16, _ARC_SPAN)
 
-        # "翻译中..." 文字
+        # 提示文字
         font = QFont(FONT_FAMILY_ZH, 11)
         painter.setFont(font)
         painter.setPen(QColor(255, 255, 255))
         text_rect = QRect(0, cy + _ARC_RADIUS + 4, w, 24)
-        painter.drawText(text_rect, int(Qt.AlignmentFlag.AlignHCenter), "翻译中...")
+        painter.drawText(text_rect, int(Qt.AlignmentFlag.AlignHCenter), self._hint_text)
 
         painter.end()
 

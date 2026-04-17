@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
-import ctypes
 import logging
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from PyQt6.QtCore import QByteArray, QRectF, Qt, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QKeyEvent, QTextOption
+from PyQt6.QtCore import QRectF, Qt, QVariantAnimation, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPainter, QKeyEvent, QMouseEvent, QTextOption
 from PyQt6.QtWidgets import QApplication, QMenu, QWidget
 
 from magic_mirror.config.settings import FONT_FAMILY_ZH
@@ -35,10 +34,6 @@ _SKELETON_PULSE = QColor(180, 180, 180, 180)
 
 # 淡入动画时长 (ms)
 _FADE_IN_DURATION = 250
-
-# Win32 常量 — 用于左键点击穿透
-_WM_NCHITTEST = 0x0084
-_HTTRANSPARENT = -1
 
 
 @dataclass
@@ -196,22 +191,12 @@ class MirrorOverlay(QWidget):
     # Qt 事件
     # ------------------------------------------------------------------
 
-    def nativeEvent(self, event_type: QByteArray, message):  # noqa: N802
-        """Win32 级别左键穿透：非右键点击时返回 HTTRANSPARENT。
-
-        拦截 WM_NCHITTEST 消息，检查当前鼠标按键状态：
-        - 右键按下 → 不穿透（让 Qt 接收到 contextMenuEvent）
-        - 其他情况 → 返回 HTTRANSPARENT 让点击穿透到下方窗口
-        """
-        if event_type == b"windows_generic_MSG":
-            import ctypes.wintypes
-            msg = ctypes.wintypes.MSG.from_address(int(message))
-            if msg.message == _WM_NCHITTEST:
-                # GetAsyncKeyState(VK_RBUTTON=0x02)：最高位=1 表示当前被按下
-                if ctypes.windll.user32.GetAsyncKeyState(0x02) & 0x8000:
-                    return super().nativeEvent(event_type, message)
-                return True, _HTTRANSPARENT
-        return super().nativeEvent(event_type, message)
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """左键忽略（视觉上穿透），右键由 contextMenuEvent 处理。"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            event.ignore()
+        else:
+            super().mousePressEvent(event)
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         """右键菜单：复制所有文本 / 重新翻译 / 关闭。"""
