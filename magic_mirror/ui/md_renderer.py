@@ -12,13 +12,8 @@ import markdown
 from markdown.extensions.codehilite import CodeHiliteExtension
 
 from magic_mirror.ui.chat_theme import (
-    BG_AI,
-    BG_HUMAN,
-    BG_SYSTEM,
-    TEXT_AI,
     TEXT_DIM,
     TEXT_ERR,
-    TEXT_HUMAN,
 )
 
 # Pygments 代码高亮 — 暗色主题内联样式
@@ -31,75 +26,102 @@ _MD = markdown.Markdown(
     ],
 )
 
-# 代码块和整体富文本的 CSS（嵌入到每条消息中）
+# 富文本 CSS（ChatGPT 风格：简洁、居中、高可读性）
 MESSAGE_CSS = """\
 body {
     font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
-    font-size: 13px;
-    line-height: 1.65;
-    color: #e0e0e0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #ececec;
     margin: 0;
     padding: 0;
+    background: #212121;
 }
-p { margin: 4px 0; }
-ul, ol { margin: 4px 0 4px 18px; padding: 0; }
-li { margin: 2px 0; }
-h1, h2, h3, h4 {
-    color: #c9d1d9;
-    margin: 8px 0 4px 0;
+.msg-row { padding: 20px 0; }
+.msg-row + .msg-row { border-top: 1px solid rgba(255,255,255,0.06); }
+.msg-inner {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+.role-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    margin-right: 8px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+.role-icon.human { background: #19c37d; color: #fff; }
+.role-icon.ai     { background: #ab68ff; color: #fff; }
+.role-icon.err    { background: #ef4444; color: #fff; }
+.role-label {
     font-weight: 600;
+    font-size: 13px;
+    color: #ececec;
+    vertical-align: middle;
 }
-h1 { font-size: 17px; }
-h2 { font-size: 15px; }
-h3 { font-size: 14px; }
-strong { color: #f0f0f0; }
-em { color: #c4b5fd; }
-a { color: #818cf8; text-decoration: none; }
+.role-header { margin-bottom: 6px; }
+.msg-content { color: #d1d5db; font-size: 14px; line-height: 1.7; }
+.msg-content p { margin: 6px 0; }
+
+/* markdown elements */
+ul, ol { margin: 6px 0 6px 20px; padding: 0; }
+li { margin: 3px 0; }
+h1, h2, h3, h4 { color: #ececec; margin: 12px 0 6px 0; font-weight: 600; }
+h1 { font-size: 18px; } h2 { font-size: 16px; } h3 { font-size: 15px; }
+strong { color: #ffffff; }
+em { font-style: italic; }
+a { color: #58a6ff; text-decoration: none; }
 code {
-    background: #1e1e2e;
-    color: #a5d6ff;
+    background: #2f2f2f;
+    color: #e06c75;
     padding: 1px 5px;
     border-radius: 4px;
     font-family: 'Cascadia Code', 'Consolas', monospace;
-    font-size: 12px;
+    font-size: 13px;
 }
 pre {
-    background: #11111b;
-    border: 1px solid #313244;
+    background: #1a1a1a;
+    border: 1px solid #383838;
     border-radius: 8px;
-    padding: 10px 14px;
+    padding: 12px 16px;
     overflow-x: auto;
-    margin: 6px 0;
+    margin: 8px 0;
 }
 pre code {
     background: transparent;
+    color: inherit;
     padding: 0;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
 }
-table {
-    border-collapse: collapse;
-    margin: 6px 0;
-}
-th, td {
-    border: 1px solid #313244;
-    padding: 4px 10px;
-    font-size: 12px;
-}
-th { background: #1e1e2e; color: #c9d1d9; }
-td { background: #181825; }
+table { border-collapse: collapse; margin: 8px 0; }
+th, td { border: 1px solid #383838; padding: 6px 12px; font-size: 13px; }
+th { background: #2f2f2f; color: #ececec; }
+td { background: #1a1a1a; }
 blockquote {
-    border-left: 3px solid #6366f1;
-    margin: 6px 0;
-    padding: 4px 12px;
-    color: #9ca3af;
-    background: #1e1e2e;
+    border-left: 3px solid #ab68ff;
+    margin: 8px 0;
+    padding: 4px 14px;
+    color: #8e8e8e;
+    background: rgba(255,255,255,0.03);
     border-radius: 0 6px 6px 0;
 }
-hr {
-    border: none;
-    border-top: 1px solid #313244;
-    margin: 8px 0;
+hr { border: none; border-top: 1px solid #383838; margin: 10px 0; }
+
+/* streaming indicator */
+.streaming-dot {
+    padding: 4px 0;
+    color: #8e8e8e;
+    font-size: 12px;
+    max-width: 680px;
+    margin: 0 auto;
+    padding-left: 24px;
 }
 """
 
@@ -131,44 +153,39 @@ def render_markdown(text: str) -> str:
 # ------------------------------------------------------------------
 
 _MSG_TEMPLATE = """\
-<div style="padding:10px 16px; margin:0; background:{bg}; border-bottom:1px solid #313244;">
-  <div style="margin-bottom:3px;">
-    <span style="color:{label_color}; font-weight:700; font-size:12px;">{icon} {label}</span>
-  </div>
-  <div style="color:#cdd6f4; font-size:13px; line-height:1.6;">
-    {content}
+<div class="msg-row">
+  <div class="msg-inner">
+    <div class="role-header">
+      <span class="role-icon {role_class}">{icon}</span>
+      <span class="role-label">{label}</span>
+    </div>
+    <div class="msg-content">{content}</div>
   </div>
 </div>
 """
 
 
 def render_message(role: str, text: str) -> str:
-    """将单条聊天消息（含角色）渲染为完整 HTML 片段。
-
-    Parameters
-    ----------
-    role : "human" | "assistant" | "error"
-    text : 消息原文（assistant 为 Markdown，其余为纯文本）
-    """
+    """将单条聊天消息（含角色）渲染为完整 HTML 片段。"""
     if role == "human":
         content = html_mod.escape(text).replace("\n", "<br>")
         return _MSG_TEMPLATE.format(
-            bg=BG_HUMAN, label_color=TEXT_HUMAN,
-            icon="❯", label="Human", content=content,
+            role_class="human", icon="U", label="You",
+            content=content,
         )
 
     if role == "assistant":
         content = render_markdown(text) if text else f'<span style="color:{TEXT_DIM};">…</span>'
         return _MSG_TEMPLATE.format(
-            bg=BG_AI, label_color=TEXT_AI,
-            icon="✦", label="Assistant", content=content,
+            role_class="ai", icon="M", label="Magic Mirror",
+            content=content,
         )
 
     # error
     content = f'<span style="color:{TEXT_ERR}">{html_mod.escape(text)}</span>'
     return _MSG_TEMPLATE.format(
-        bg=BG_SYSTEM, label_color=TEXT_ERR,
-        icon="⚠", label="Error", content=content,
+        role_class="err", icon="!", label="Error",
+        content=content,
     )
 
 
@@ -189,7 +206,6 @@ def build_messages_html(
         parts.append(render_message(msg["role"], msg["text"]))
     if streaming:
         parts.append(
-            f'<div style="padding:2px 18px; color:{TEXT_DIM}; font-size:11px;">'
-            "● generating…</div>"
+            '<div class="streaming-dot">● generating…</div>'
         )
     return "".join(parts)

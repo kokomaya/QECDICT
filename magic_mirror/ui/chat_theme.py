@@ -5,26 +5,24 @@
 """
 
 # ------------------------------------------------------------------
-# 色彩系统（Claude Code 风格：Catppuccin Mocha 基调）
+# 色彩系统（ChatGPT 风格：深色、简洁、高可读性）
 # ------------------------------------------------------------------
 
-BG_WINDOW = "#181825"
-BG_CHAT = "#1e1e2e"
-BG_INPUT = "#242438"
-BG_SIDEBAR = "#1a1a2e"
-BG_HUMAN = "#2a2a3e"
+BG_WINDOW = "#212121"
+BG_CHAT = "#212121"
+BG_INPUT = "#2f2f2f"
+BG_USER = "#2f2f2f"           # 用户消息背景
 BG_AI = "transparent"
-BG_SYSTEM = "#2c1a1a"
+BG_SYSTEM = "#3a2020"
 
-TEXT = "#cdd6f4"
-TEXT_DIM = "#6c7086"
-TEXT_HUMAN = "#89b4fa"
-TEXT_AI = "#a6e3a1"
-TEXT_ERR = "#f38ba8"
+TEXT = "#ececec"
+TEXT_DIM = "#8e8e8e"
+TEXT_LABEL = "#ececec"         # 角色标签
+TEXT_ERR = "#ef4444"
 
-ACCENT = "#cba6f7"
-ACCENT_DIM = "#45475a"
-BORDER = "#313244"
+ACCENT = "#ececec"
+ACCENT_DIM = "#424242"
+BORDER = "#383838"
 
 # ------------------------------------------------------------------
 # QSS 样式表
@@ -45,28 +43,24 @@ QWidget#topBar {{
     background: {BG_WINDOW};
     border-bottom: 1px solid {BORDER};
 }}
-QLabel#logoLabel {{
-    color: {ACCENT};
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 1px;
+QLabel#titleLabel {{
+    color: {TEXT};
+    font-size: 14px;
+    font-weight: 600;
 }}
 QLabel#tokenBadge {{
     color: {TEXT_DIM};
     font-size: 10px;
-    background: {ACCENT_DIM};
-    border-radius: 9px;
-    padding: 2px 8px;
 }}
 QComboBox {{
     background: {BG_INPUT};
     color: {TEXT};
     border: 1px solid {BORDER};
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 4px 10px;
-    font-size: 11px;
+    font-size: 12px;
 }}
-QComboBox:hover {{ border-color: {ACCENT}; }}
+QComboBox:hover {{ border-color: {TEXT_DIM}; }}
 QComboBox::drop-down {{ border: none; width: 20px; }}
 QComboBox QAbstractItemView {{
     background: {BG_INPUT};
@@ -76,56 +70,41 @@ QComboBox QAbstractItemView {{
     outline: 0;
 }}
 
-/* ── 对话区 ── */
-QTextEdit#chatView {{
-    background: {BG_CHAT};
-    border: none;
-    padding: 0;
-    selection-background-color: rgba(203,166,247,0.25);
-}}
-
 /* ── 输入区 ── */
+QWidget#inputBar {{
+    background: {BG_WINDOW};
+}}
 QPlainTextEdit#inputBox {{
     background: {BG_INPUT};
     color: {TEXT};
-    border: 1px solid {ACCENT_DIM};
-    border-radius: 12px;
+    border: 1px solid {BORDER};
+    border-radius: 16px;
     padding: 10px 14px;
     font-size: 13px;
-    selection-background-color: rgba(203,166,247,0.3);
+    selection-background-color: rgba(255,255,255,0.15);
 }}
-QPlainTextEdit#inputBox:focus {{ border-color: {ACCENT}; }}
+QPlainTextEdit#inputBox:focus {{
+    border-color: {TEXT_DIM};
+}}
 
 QPushButton#sendBtn {{
     background: {ACCENT};
     color: {BG_WINDOW};
     border: none;
-    border-radius: 10px;
-    padding: 8px 22px;
-    font-size: 13px;
+    border-radius: 14px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    font-size: 14px;
     font-weight: 700;
 }}
-QPushButton#sendBtn:hover {{ background: #b4befe; }}
-QPushButton#sendBtn:disabled {{ background: {ACCENT_DIM}; color: {TEXT_DIM}; }}
-
-QPushButton#clearBtn {{
-    background: transparent;
-    color: {TEXT_DIM};
-    border: 1px solid {BORDER};
-    border-radius: 10px;
-    padding: 6px 14px;
-    font-size: 12px;
+QPushButton#sendBtn:hover {{
+    background: #ffffff;
 }}
-QPushButton#clearBtn:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }}
-
-/* ── 侧栏 ── */
-QPlainTextEdit#ctxEdit {{
-    background: {BG_SIDEBAR};
+QPushButton#sendBtn:disabled {{
+    background: {ACCENT_DIM};
     color: {TEXT_DIM};
-    border: none;
-    padding: 8px;
-    font-size: 11px;
-    border-radius: 6px;
 }}
 
 /* ── 滚动条 ── */

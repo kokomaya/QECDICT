@@ -72,11 +72,11 @@ class ChatHtmlView(QWebEngineView):
             "<!DOCTYPE html>"
             '<html><head><meta charset="utf-8"><style>'
             "html, body { margin:0; padding:0; }"
-            "body { background:#1e1e2e; }"
+            "body { background:#212121; }"
             f"{MESSAGE_CSS}"
             "::-webkit-scrollbar { width:6px; }"
             "::-webkit-scrollbar-track { background:transparent; }"
-            "::-webkit-scrollbar-thumb { background:#45475a; border-radius:3px; }"
+            "::-webkit-scrollbar-thumb { background:#424242; border-radius:3px; }"
             "</style></head><body>"
             '<div id="root"></div>'
             "</body></html>"

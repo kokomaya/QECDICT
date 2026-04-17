@@ -30,12 +30,7 @@ from magic_mirror.chat.model_service import (
     save_selected_model,
 )
 from magic_mirror.ui.chat_html_view import ChatHtmlView
-from magic_mirror.ui.chat_theme import (
-    BG_SIDEBAR,
-    BG_WINDOW,
-    BORDER,
-    CHAT_DIALOG_QSS,
-)
+from magic_mirror.ui.chat_theme import CHAT_DIALOG_QSS
 from magic_mirror.ui.md_renderer import build_messages_html
 
 logger = logging.getLogger(__name__)
@@ -130,18 +125,17 @@ class ChatDialog(QDialog):
         # ── 顶部栏 ──
         top = QWidget()
         top.setObjectName("topBar")
-        top.setFixedHeight(44)
+        top.setFixedHeight(42)
         tb = QHBoxLayout(top)
         tb.setContentsMargins(16, 0, 16, 0)
 
-        logo = QLabel("⬡ Magic Mirror Chat")
-        logo.setObjectName("logoLabel")
-        tb.addWidget(logo)
+        title = QLabel("Magic Mirror")
+        title.setObjectName("titleLabel")
+        tb.addWidget(title)
         tb.addStretch()
 
-        tb.addWidget(QLabel("Model"))
         self._combo = QComboBox()
-        self._combo.setMinimumWidth(200)
+        self._combo.setMinimumWidth(180)
         self._combo.currentTextChanged.connect(self._on_model_changed)
         tb.addWidget(self._combo)
 
@@ -151,61 +145,41 @@ class ChatDialog(QDialog):
 
         root.addWidget(top)
 
-        # ── 中间 (对话 + 侧栏) ──
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
-
-        # 对话区
+        # ── 对话区（全宽，无侧栏）──
         self._chat = ChatHtmlView()
-        body.addWidget(self._chat, 7)
-
-        # 侧栏 — 原文参考
-        sidebar = QWidget()
-        sidebar.setFixedWidth(220)
-        sidebar.setStyleSheet(f"background:{BG_SIDEBAR}; border-left:1px solid {BORDER};")
-        sl = QVBoxLayout(sidebar)
-        sl.setContentsMargins(10, 10, 10, 10)
-        sl.setSpacing(6)
-        sl.addWidget(QLabel("📄 Reference Text"))
-        ctx = QPlainTextEdit()
-        ctx.setObjectName("ctxEdit")
-        ctx.setReadOnly(True)
-        ctx.setPlainText(self._context_text)
-        ctx.setFont(QFont("Cascadia Code", 9))
-        sl.addWidget(ctx)
-        body.addWidget(sidebar)
-
-        root.addLayout(body, 1)
+        root.addWidget(self._chat, 1)
 
         # ── 底部输入栏 ──
-        bottom = QWidget()
-        bottom.setStyleSheet(f"background:{BG_WINDOW}; border-top:1px solid {BORDER};")
-        bl = QHBoxLayout(bottom)
-        bl.setContentsMargins(14, 8, 14, 10)
-        bl.setSpacing(8)
+        input_bar = QWidget()
+        input_bar.setObjectName("inputBar")
+        il = QHBoxLayout(input_bar)
+        il.setContentsMargins(0, 8, 0, 12)
+        il.setSpacing(0)
+
+        # 居中容器
+        il.addStretch(1)
+        center = QHBoxLayout()
+        center.setSpacing(8)
+        center.setContentsMargins(0, 0, 0, 0)
 
         self._input = _ChatInputEdit()
         self._input.setObjectName("inputBox")
         self._input.sig_submit.connect(self._send)
-        self._input.setPlaceholderText("Message Magic Mirror…    (Enter ↵ send · Shift+Enter ↵ newline)")
-        self._input.setMaximumHeight(72)
+        self._input.setPlaceholderText("输入消息...")
+        self._input.setMaximumHeight(68)
+        self._input.setMinimumWidth(500)
         self._input.setFont(QFont("Microsoft YaHei", 10))
-        bl.addWidget(self._input, 1)
+        center.addWidget(self._input)
 
-        btns = QVBoxLayout()
-        btns.setSpacing(4)
-        self._send_btn = QPushButton("Send")
+        self._send_btn = QPushButton("↑")
         self._send_btn.setObjectName("sendBtn")
         self._send_btn.clicked.connect(self._send)
-        btns.addWidget(self._send_btn)
-        self._clear_btn = QPushButton("Clear")
-        self._clear_btn.setObjectName("clearBtn")
-        self._clear_btn.clicked.connect(self._clear)
-        btns.addWidget(self._clear_btn)
-        bl.addLayout(btns)
+        center.addWidget(self._send_btn, 0, Qt.AlignmentFlag.AlignBottom)
 
-        root.addWidget(bottom)
+        il.addLayout(center)
+        il.addStretch(1)
+
+        root.addWidget(input_bar)
 
     # ------------------------------------------------------------------
     # 模型
