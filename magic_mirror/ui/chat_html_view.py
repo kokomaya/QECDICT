@@ -24,7 +24,8 @@ class ChatHtmlView(QWebEngineView):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        # 允许默认右键菜单（选中/复制）
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         self._page_ready = False
         self.page().loadFinished.connect(self._on_shell_ready)
         self.setHtml(self._build_shell(), QUrl("about:blank"))
@@ -68,16 +69,65 @@ class ChatHtmlView(QWebEngineView):
 
     @staticmethod
     def _build_shell() -> str:
+        copy_btn_css = (
+            ".copy-btn {"
+            "  position:absolute; top:6px; right:6px;"
+            "  background:rgba(255,255,255,0.1); color:#aaa;"
+            "  border:1px solid rgba(255,255,255,0.15); border-radius:4px;"
+            "  padding:2px 8px; font-size:11px; cursor:pointer;"
+            "  opacity:0; transition:opacity 0.15s;"
+            "}"
+            ".copy-btn:hover { background:rgba(255,255,255,0.2); color:#fff; }"
+            ".code-wrapper { position:relative; }"
+            ".code-wrapper:hover .copy-btn { opacity:1; }"
+            ".msg-row { position:relative; }"
+            ".msg-copy-btn {"
+            "  position:absolute; top:12px; right:12px;"
+            "  background:rgba(255,255,255,0.06); color:#666;"
+            "  border:1px solid rgba(255,255,255,0.1); border-radius:4px;"
+            "  padding:2px 8px; font-size:11px; cursor:pointer;"
+            "  opacity:0; transition:opacity 0.15s;"
+            "}"
+            ".msg-copy-btn:hover { background:rgba(255,255,255,0.15); color:#ccc; }"
+            ".msg-row:hover .msg-copy-btn { opacity:1; }"
+        )
+        copy_btn_js = (
+            "<script>"
+            "document.addEventListener('click', function(e) {"
+            "  var btn = e.target.closest('.copy-btn');"
+            "  if (btn) {"
+            "    var code = btn.parentElement.querySelector('pre code, pre');"
+            "    if (code) {"
+            "      navigator.clipboard.writeText(code.innerText).then(function(){"
+            "        btn.textContent='Copied!'; setTimeout(function(){btn.textContent='Copy';},1200);"
+            "      });"
+            "    }"
+            "    return;"
+            "  }"
+            "  var mbtn = e.target.closest('.msg-copy-btn');"
+            "  if (mbtn) {"
+            "    var content = mbtn.parentElement.querySelector('.msg-content');"
+            "    if (content) {"
+            "      navigator.clipboard.writeText(content.innerText).then(function(){"
+            "        mbtn.textContent='Copied!'; setTimeout(function(){mbtn.textContent='Copy';},1200);"
+            "      });"
+            "    }"
+            "  }"
+            "});"
+            "</script>"
+        )
         return (
             "<!DOCTYPE html>"
             '<html><head><meta charset="utf-8"><style>'
             "html, body { margin:0; padding:0; }"
             "body { background:#212121; }"
             f"{MESSAGE_CSS}"
+            f"{copy_btn_css}"
             "::-webkit-scrollbar { width:6px; }"
             "::-webkit-scrollbar-track { background:transparent; }"
             "::-webkit-scrollbar-thumb { background:#424242; border-radius:3px; }"
             "</style></head><body>"
             '<div id="root"></div>'
+            f"{copy_btn_js}"
             "</body></html>"
         )

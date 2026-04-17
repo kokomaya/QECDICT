@@ -33,6 +33,10 @@ _ALIGN_MAP = {
 _SKELETON_BG = QColor(200, 200, 200, 180)
 _SKELETON_PULSE = QColor(180, 180, 180, 180)
 
+# 错误提示配色
+_ERROR_BG = QColor(220, 38, 38, 200)
+_ERROR_TEXT = QColor(255, 255, 255)
+
 # 淡入动画时长 (ms)
 _FADE_IN_DURATION = 250
 
@@ -63,7 +67,6 @@ class MirrorOverlay(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # 不设置 WA_TransparentForMouseEvents：需要接收右键事件。
-        # 左键穿透通过 nativeEvent + WM_NCHITTEST 实现。
 
         self._render_blocks: List[RenderBlock] = []
         self._skeletons: List[_SkeletonRect] = []
@@ -74,6 +77,7 @@ class MirrorOverlay(QWidget):
 
         # 上下文预览面板
         self._preview = ContextPreviewPanel()
+        self._error_msg: str | None = None   # 错误提示文本
 
     # ------------------------------------------------------------------
     # 公开 API
@@ -162,10 +166,20 @@ class MirrorOverlay(QWidget):
             self.raise_()
         self._start_fade_in()
 
+    def show_error(self, msg: str) -> None:
+        """在覆盖层上显示错误提示，替换骨架屏。"""
+        self._error_msg = msg
+        self._skeletons.clear()
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+        self.update()
+
     def close_overlay(self) -> None:
         """关闭并隐藏覆盖层。"""
         self._render_blocks = []
         self._skeletons = []
+        self._error_msg = None
         self._preview.close_panel()
         self.hide()
 
@@ -202,7 +216,7 @@ class MirrorOverlay(QWidget):
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """左键忽略（视觉上穿透），右键由 contextMenuEvent 处理。"""
+        """左键忽略（穿透），右键由 contextMenuEvent 处理。"""
         if event.button() == Qt.MouseButton.LeftButton:
             event.ignore()
         else:
@@ -233,6 +247,12 @@ class MirrorOverlay(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        # ── 绘制错误提示 ──
+        if self._error_msg:
+            self._paint_error(painter)
+            painter.end()
+            return
 
         # ── 绘制骨架占位条 ──
         for skel in self._skeletons:
@@ -318,6 +338,33 @@ class MirrorOverlay(QWidget):
         texts = [b.translated_text for b in self._render_blocks]
         if texts:
             self.sig_open_chat.emit("\n".join(texts))
+
+    def _paint_error(self, painter: QPainter) -> None:
+        """在覆盖层中央绘制错误提示条。"""
+        font = QFont(FONT_FAMILY_ZH)
+        font.setPixelSize(14)
+        painter.setFont(font)
+
+        text = self._error_msg or "翻译失败"
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(text)
+        text_h = fm.height()
+        pad_x, pad_y = 16, 10
+
+        bar_w = text_w + pad_x * 2
+        bar_h = text_h + pad_y * 2
+        bar_x = (self.width() - bar_w) // 2
+        bar_y = (self.height() - bar_h) // 2
+
+        painter.setBrush(_ERROR_BG)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, 6, 6)
+
+        painter.setPen(_ERROR_TEXT)
+        painter.drawText(
+            bar_x + pad_x, bar_y + pad_y + fm.ascent(),
+            text,
+        )
 
 
 # ------------------------------------------------------------------

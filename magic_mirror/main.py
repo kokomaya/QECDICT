@@ -11,7 +11,7 @@ import sys
 from typing import List, Tuple
 
 from PyQt6.QtCore import QObject, QRect, QRunnable, QThreadPool, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from magic_mirror.config import load_env, load_llm_config
@@ -463,7 +463,13 @@ class StreamTranslateApp(QObject):
     def _on_pipeline_error(self, msg: str) -> None:
         if self._loading.isVisible():
             self._loading.dismiss_immediately()
+        if hasattr(self, '_current_overlay') and self._current_overlay:
+            self._current_overlay.show_error("翻译失败，右键重试")
         self._current_overlay = None
+        self._tray.showMessage(
+            "Magic Mirror", f"翻译失败: {msg}",
+            QSystemTrayIcon.MessageIcon.Critical, 3000,
+        )
         logger.error("翻译失败: %s", msg)
 
     # ── 重新翻译 ──
@@ -520,8 +526,33 @@ class StreamTranslateApp(QObject):
 
     # ── 系统托盘 ──
 
+    @staticmethod
+    def _create_tray_icon() -> QIcon:
+        """生成 Magic Mirror 托盘图标（程序化绘制，无需外部图片）。"""
+        size = 32
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 圆形底色（品牌蓝）
+        p.setBrush(QColor(0, 120, 215))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(1, 1, size - 2, size - 2)
+
+        # 中央 "M" 字母
+        font = QFont("Segoe UI", 17)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor(255, 255, 255))
+        p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "M")
+
+        p.end()
+        return QIcon(pm)
+
     def _setup_tray(self) -> None:
         self._tray = QSystemTrayIcon(self)
+        self._tray.setIcon(self._create_tray_icon())
         self._tray.setToolTip("Magic Mirror — 屏幕翻译")
 
         menu = QMenu()

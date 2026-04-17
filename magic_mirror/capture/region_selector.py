@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from magic_mirror.config.settings import SELECTOR_BORDER_COLOR, SELECTOR_MASK_COLOR
@@ -123,9 +123,42 @@ class RegionSelector(QWidget):
             painter.setPen(pen)
             painter.drawRect(rect)
 
+            # 尺寸标注（选区右下角外侧）
+            self._paint_size_label(painter, rect)
+
         painter.end()
 
     # ── 私有方法 ──
+
+    def _paint_size_label(self, painter: QPainter, rect: QRect) -> None:
+        """在选区右下角外侧绘制 宽×高 尺寸标注。"""
+        label = f"{rect.width()} × {rect.height()}"
+
+        font = QFont("Consolas", 11)
+        font.setBold(True)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
+        text_w = fm.horizontalAdvance(label)
+        text_h = fm.height()
+        pad_x, pad_y = 6, 3
+
+        bg_w = text_w + pad_x * 2
+        bg_h = text_h + pad_y * 2
+
+        # 定位到选区右下角外侧偏移 4px
+        lx = rect.right() - bg_w + 1
+        ly = rect.bottom() + 4
+
+        # 防止标签超出窗口底部
+        if ly + bg_h > self.height():
+            ly = rect.bottom() - bg_h - 4
+
+        painter.setBrush(QColor(0, 0, 0, 180))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(lx, ly, bg_w, bg_h, 4, 4)
+
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(lx + pad_x, ly + pad_y + fm.ascent(), label)
 
     def _selection_rect(self) -> QRect | None:
         """根据起点和当前位置计算规范化矩形。"""
