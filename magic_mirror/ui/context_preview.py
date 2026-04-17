@@ -138,7 +138,8 @@ class ContextPreviewPanel(QWidget):
         """根据当前文本对列表重建富文本内容。"""
         html_parts: List[str] = []
         for pair in self._texts:
-            if pair.source:
+            # 有原文、且原文与译文不同时才显示双语对照
+            if pair.source and _text_differs(pair.source, pair.translated):
                 html_parts.append(
                     f'<p style="color:rgba(180,180,180,200);margin:2px 0 0 0;">{_esc(pair.source)}</p>'
                     f'<p style="color:rgba(255,255,255,220);margin:0 0 6px 0;">{_esc(pair.translated)}</p>'
@@ -179,6 +180,10 @@ class ContextPreviewPanel(QWidget):
 # 辅助
 # ------------------------------------------------------------------
 
+import re
+import unicodedata
+
+
 def _esc(text: str) -> str:
     """HTML 转义，保留换行。"""
     return (
@@ -187,3 +192,15 @@ def _esc(text: str) -> str:
         .replace(">", "&gt;")
         .replace("\n", "<br>")
     )
+
+
+def _normalize(text: str) -> str:
+    """去空格、标点、大小写后的归一化文本，用于比较。"""
+    t = unicodedata.normalize("NFKC", text)
+    t = re.sub(r"[\s\-—_.,;:!?()（）\[\]{}\"'""'']+", "", t)
+    return t.lower()
+
+
+def _text_differs(source: str, translated: str) -> bool:
+    """源文本与译文是否实质不同（忽略空格/标点/大小写差异）。"""
+    return _normalize(source) != _normalize(translated)

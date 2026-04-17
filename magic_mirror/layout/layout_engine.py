@@ -10,6 +10,7 @@ import logging
 from typing import List, Tuple
 
 import numpy as np
+from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QFont, QFontMetrics
 
 from magic_mirror.config.settings import (
@@ -62,6 +63,8 @@ class DefaultLayoutEngine:
         screen_x0, screen_y0 = screen_bbox[0], screen_bbox[1]
         results: List[RenderBlock] = []
 
+        # ── 第一轮：逐段计算字号、颜色等参数 ──
+        para_data: List[dict] = []
         for para, alignment in zip(paragraphs, para_alignments):
             first_src = para[0].source
 
@@ -95,20 +98,77 @@ class DefaultLayoutEngine:
             # 合并原文（用于对照预览）
             merged_source = "\n".join(b.source.text for b in para)
 
+            para_data.append(dict(
+                sx=sx, sy=sy, final_w=final_w, final_h=final_h,
+                merged_text=merged_text, font_size=font_size,
+                bg_color=bg_color, text_color=text_color,
+                alignment=alignment, merged_source=merged_source,
+                avg_font_est=avg_font_est,
+            ))
+
+        # ── 第二轮：统一相近原始字号的段落组的字号 ──
+        _unify_font_sizes(para_data)
+
+        # ── 第三轮：组装 RenderBlock ──
+        for d in para_data:
             results.append(RenderBlock(
-                screen_x=sx,
-                screen_y=sy,
-                width=final_w,
-                height=final_h,
-                translated_text=merged_text,
-                font_size=font_size,
-                bg_color=bg_color,
-                text_color=text_color,
-                alignment=alignment,
-                source_text=merged_source,
+                screen_x=d["sx"],
+                screen_y=d["sy"],
+                width=d["final_w"],
+                height=d["final_h"],
+                translated_text=d["merged_text"],
+                font_size=d["font_size"],
+                bg_color=d["bg_color"],
+                text_color=d["text_color"],
+                alignment=d["alignment"],
+                source_text=d["merged_source"],
             ))
 
         return results
+
+
+# ------------------------------------------------------------------
+# 字号统一
+# ------------------------------------------------------------------
+
+# 原始字号差异在此范围内视为"同组"（像素）
+_FONT_GROUP_TOLERANCE = 3.0
+
+
+def _unify_font_sizes(para_data: List[dict]) -> None:
+    """将原始字号相近的段落组统一为组内最小字号。
+
+    同一页面中原本相同字体大小的文本行，OCR 估算的 font_size_est
+    可能略有偏差，但翻译后中文长度不同导致 _fit_font_size 得到
+    差异较大的字号（短译文保持大字号，长译文被缩小），视觉上不协调。
+
+    策略：
+      1. 按 avg_font_est 排序后贪心分组（相邻差 ≤ 容差 → 同组）
+      2. 每组内取最小 font_size，统一赋给组内所有段落
+    """
+    if len(para_data) <= 1:
+        return
+
+    # 构建 (index, avg_font_est) 并按 avg_font_est 排序
+    indexed = sorted(enumerate(para_data), key=lambda t: t[1]["avg_font_est"])
+
+    groups: List[List[int]] = [[indexed[0][0]]]
+    prev_est = indexed[0][1]["avg_font_est"]
+
+    for idx, d in indexed[1:]:
+        if abs(d["avg_font_est"] - prev_est) <= _FONT_GROUP_TOLERANCE:
+            groups[-1].append(idx)
+        else:
+            groups.append([idx])
+        prev_est = d["avg_font_est"]
+
+    # 每组统一为组内最小 font_size
+    for group in groups:
+        if len(group) < 2:
+            continue
+        min_fs = min(para_data[i]["font_size"] for i in group)
+        for i in group:
+            para_data[i]["font_size"] = min_fs
 
 
 # ------------------------------------------------------------------
@@ -149,6 +209,13 @@ def _merge_adjacent_blocks(
 
 def _should_merge(a: TranslatedBlock, b: TranslatedBlock) -> bool:
     """判断两个相邻文本块是否应合并为同一段落。"""
+    # 字号差异检查：标题与正文不合并
+    max_fs = max(a.source.font_size_est, b.source.font_size_est)
+    if max_fs > 0:
+        ratio = abs(a.source.font_size_est - b.source.font_size_est) / max_fs
+        if ratio > 0.25:
+            return False
+
     a_left, a_top, a_w, a_h = _bbox_rect(a.source.bbox)
     b_left, b_top, b_w, b_h = _bbox_rect(b.source.bbox)
 
@@ -266,15 +333,15 @@ def _fit_font_size(
 ) -> Tuple[int, int]:
     """二分查找在 bbox 内不溢出的最大字号。
 
-    在 [min_size, base_size] 区间二分，用 QFontMetrics 精确测量
-    每行宽度，找到最大不溢出的字号。
+    使用 QFontMetrics.boundingRect + TextWordWrap 精确测量
+    自动换行后的文本尺寸，支持段落级长文本的重流。
 
     Args:
         text: 待渲染文本（可能含 \\n）。
         font_size_est: OCR 估算的原始字号。
         bbox_width: bbox 像素宽度。
         bbox_height: bbox 像素高度。
-        n_lines: 文本行数。
+        n_lines: 文本行数（参考，实际以测量为准）。
 
     Returns:
         (final_font_size, max_line_render_width)
@@ -283,23 +350,18 @@ def _fit_font_size(
     base_size = max(int(font_size_est * FONT_SIZE_SCALE * 1.4), 8)
     min_size = max(int(font_size_est * FONT_SIZE_SCALE * MAX_FONT_SHRINK_RATIO), 8)
 
-    lines = text.split("\n")
-
     def _fits(size: int) -> Tuple[bool, int]:
-        """检查字号是否在 bbox 内不溢出，返回 (是否fit, 最宽行宽)。"""
+        """检查字号是否在 bbox 内不溢出（支持自动换行）。"""
         font = QFont(FONT_FAMILY_ZH)
         font.setPixelSize(size)
         fm = QFontMetrics(font)
-        w = max(fm.horizontalAdvance(line) for line in lines)
-        if w > bbox_width:
-            return False, w
-        # 高度检查：单行用 ascent+descent，多行加行距
-        if bbox_height > 0:
-            n = len(lines)
-            total_h = fm.height() if n == 1 else fm.height() + fm.lineSpacing() * (n - 1)
-            if total_h > bbox_height:
-                return False, w
-        return True, w
+        br = fm.boundingRect(
+            QRect(0, 0, bbox_width, 100000),
+            int(Qt.TextFlag.TextWordWrap),
+            text,
+        )
+        fits = br.height() <= bbox_height if bbox_height > 0 else True
+        return fits, br.width()
 
     # 先检查 base_size 是否已经不溢出
     ok, max_w = _fits(base_size)
