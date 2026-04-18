@@ -3,11 +3,11 @@ chcp 65001 >nul 2>&1
 
 cd /d "%~dp0"
 
-REM -- read version
-for /f "tokens=*" %%v in ('.venv\Scripts\python -c "from quickdict.config import VERSION; print(VERSION)"') do set VER=%%v
+set VER=0.1.0
 
 echo ============================================
-echo   QuickDict Build  v%VER%
+echo   LinguaLens Build  v%VER%
+echo   (QuickDict + MagicMirror)
 echo ============================================
 echo.
 
@@ -24,6 +24,12 @@ if not exist "data\ecdict.db" (
     exit /b 1
 )
 
+if not exist "magic_mirror\config\llm_providers.yaml" (
+    echo [ERROR] magic_mirror\config\llm_providers.yaml not found
+    pause
+    exit /b 1
+)
+
 REM -- pyinstaller
 echo [1/4] Checking PyInstaller ...
 .venv\Scripts\pip show pyinstaller >nul 2>&1
@@ -33,39 +39,42 @@ if errorlevel 1 (
 )
 echo        OK
 
+REM -- config
+if not exist "magic_mirror\config\.env" (
+    echo [WARN] magic_mirror\config\.env not found, creating empty
+    echo. > magic_mirror\config\.env
+)
+
 REM -- build
-echo [2/4] Building QuickDict.exe (UPX) ...
+echo [2/4] Building LinguaLens.exe (UPX) ...
 set PATH=%~dp0tools\upx-4.2.4-win64;%PATH%
-.venv\Scripts\pyinstaller quickdict.spec --noconfirm >nul 2>&1
+.venv\Scripts\pyinstaller lingualens.spec --noconfirm >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] PyInstaller build failed
-    .venv\Scripts\pyinstaller quickdict.spec --noconfirm
+    .venv\Scripts\pyinstaller lingualens.spec --noconfirm
     pause
     exit /b 1
 )
 echo        OK
 
 REM -- release dir
-set RELEASE_DIR=release\v%VER%
-set APP_DIR=%RELEASE_DIR%\QuickDict
-set DB_PKG=%RELEASE_DIR%\QuickDict-data
+set RELEASE_DIR=release\LinguaLens-v%VER%
+set APP_DIR=%RELEASE_DIR%\LinguaLens
+set DB_PKG=%RELEASE_DIR%\LinguaLens-data
 
-echo [3/4] Preparing release dir (v%VER%) ...
+echo [3/4] Preparing release dir ...
 
 if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%APP_DIR%"
 mkdir "%DB_PKG%\data"
 
-xcopy "dist\QuickDict\*" "%APP_DIR%\" /e /q /y >nul
+xcopy "dist\LinguaLens\*" "%APP_DIR%\" /e /q /y >nul
 
 copy "data\ecdict.db" "%DB_PKG%\data\ecdict.db" >nul
 
-if not exist "使用说明.md" (
-    echo [ERROR] 使用说明.md not found
-    pause
-    exit /b 1
+if exist "使用说明.md" (
+    copy "使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
 )
-copy "使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
 
 REM -- trim
 echo [3.5/4] Trimming ...
@@ -94,10 +103,6 @@ if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll" (
     del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll"
 )
 
-if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Network.dll" (
-    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Network.dll"
-)
-
 if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll" (
     del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll"
 )
@@ -113,13 +118,13 @@ echo.
 echo   Release: %RELEASE_DIR%\
 echo.
 echo   %APP_DIR%\              -- app
-echo     QuickDict.exe
+echo     LinguaLens.exe
 echo     _internal\
 echo.
 echo   %DB_PKG%\               -- database (separate)
 echo     data\ecdict.db
 echo.
 echo   Copy %DB_PKG%\data\ into %APP_DIR%\
-echo   Then run QuickDict.exe
+echo   Then run LinguaLens.exe
 echo.
 pause
