@@ -191,6 +191,51 @@ class TestFontDetection:
             assert block.font_info.confidence >= 0, "confidence should be non-negative"
 
 
+class TestFontSizeHierarchy:
+    """验证渲染字号层级：标题 > 正文。"""
+
+    def setup_method(self):
+        self.image = _load_image()
+        h, w = self.image.shape[:2]
+        self.screen_bbox = (0, 0, w, h)
+        self.blocks = _run_ocr(self.image)
+
+    def test_heading_larger_than_body(self):
+        from magic_mirror.layout.layout_engine import DefaultLayoutEngine
+        from magic_mirror.interfaces.types import TranslatedBlock
+
+        zh = [
+            '4.1.3 面向服务通信中事件的局限性',
+            '它也被称为事件通信。',
+            '因为需要周期性通信。',
+            'E2E 通信保护仅限于周期性数据通信',
+            '范式,其中接收方对定期接收有一定期望,',
+            '在通信丢失或错误的情况下,执行',
+            '错误处理。',
+            '如果 E2E 的一个保护功能不是',
+            '被周期性调用,那么一些故障模式可能不会',
+            '被检测到。',
+        ]
+        translated = [
+            TranslatedBlock(source=b, translated_text=t)
+            for b, t in zip(self.blocks, zh)
+        ]
+
+        layout = DefaultLayoutEngine()
+        rbs = layout.compute_layout(translated, self.image, self.screen_bbox)
+
+        heading_sizes = [rb.font_size for rb in rbs if rb.font_bold]
+        body_sizes = [rb.font_size for rb in rbs if not rb.font_bold]
+
+        if heading_sizes and body_sizes:
+            min_heading = min(heading_sizes)
+            max_body = max(body_sizes)
+            assert min_heading > max_body, (
+                f"Heading font ({min_heading}px) should be larger than "
+                f"body font ({max_body}px)"
+            )
+
+
 class TestColorAccuracy:
     """验证颜色采样精度 — 白底黑字场景。"""
 

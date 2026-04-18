@@ -12,12 +12,11 @@ import logging
 from typing import List, Tuple
 
 from PyQt6.QtCore import QRectF, Qt, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QColor, QEnterEvent, QFont, QPainter, QKeyEvent, QMouseEvent, QTextOption
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QTextOption
 from PyQt6.QtWidgets import QApplication, QMenu, QWidget
 
 from magic_mirror.config.settings import FONT_FAMILY_ZH
 from magic_mirror.interfaces.types import RenderBlock, TextAlignment, TextBlock
-from magic_mirror.ui._overlay_interaction import OverlayInteraction
 from magic_mirror.ui._skeleton_painter import SkeletonPainter, SkeletonRect
 from magic_mirror.ui.context_preview import ContextPreviewPanel
 
@@ -54,11 +53,11 @@ class MirrorOverlay(QWidget):
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # 不设置 WA_TransparentForMouseEvents：需要接收右键事件。
-        self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self._render_blocks: List[RenderBlock] = []
         self._block_opacity: float = 1.0           # 用于淡入动画
@@ -68,8 +67,6 @@ class MirrorOverlay(QWidget):
 
         # 骨架屏绘制（shimmer 动画）
         self._skeleton_painter = SkeletonPainter(self)
-        # 拖拽 / 缩放交互
-        self._interaction = OverlayInteraction(self, self._sync_preview)
         # 上下文预览面板
         self._preview = ContextPreviewPanel()
         self._error_msg: str | None = None   # 错误提示文本
@@ -216,50 +213,13 @@ class MirrorOverlay(QWidget):
     # Qt 事件
     # ------------------------------------------------------------------
 
-    def enterEvent(self, event: QEnterEvent) -> None:  # noqa: N802
-        """鼠标进入覆盖层 → 激活窗口并获取键盘焦点（使 Space 透视可用）。"""
-        self.activateWindow()
-        self.setFocus(Qt.FocusReason.MouseFocusReason)
-        super().enterEvent(event)
-
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """Alt+左键拖拽 / 边缘 resize / 其余左键忽略穿透。"""
-        if self._interaction.on_mouse_press(event):
-            return
         if event.button() == Qt.MouseButton.LeftButton:
             event.ignore()
         else:
             super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """拖拽 / resize 过程中更新位置，或更新边缘光标形状。"""
-        if not self._interaction.on_mouse_move(event):
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """结束拖拽 / resize。"""
-        if not self._interaction.on_mouse_release(event):
-            super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """双击自动扩展覆盖层至适合所有内容的大小。"""
-        if event.button() != Qt.MouseButton.LeftButton or not self._render_blocks:
-            super().mouseDoubleClickEvent(event)
-            return
-        min_x = min(b.screen_x for b in self._render_blocks)
-        min_y = min(b.screen_y for b in self._render_blocks)
-        max_x = max(b.screen_x + b.width for b in self._render_blocks)
-        max_y = max(b.screen_y + b.height for b in self._render_blocks)
-        pad = 8
-        self.setGeometry(
-            min_x - pad, min_y - pad,
-            max_x - min_x + 2 * pad, max_y - min_y + 2 * pad,
-        )
-        self._sync_preview()
-        self.update()
-
     def contextMenuEvent(self, event) -> None:  # noqa: N802
-        """右键菜单：复制所有文本 / 重新翻译 / 智能对话 / 关闭。"""
         menu = QMenu(self)
 
         act_copy = menu.addAction("复制全部译文")
@@ -347,50 +307,25 @@ class MirrorOverlay(QWidget):
         rect = QRectF(lx, ly, block.width, block.height)
         painter.drawText(rect, block.translated_text, text_opt)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape:
-            self.close_overlay()
-        elif event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            # Space 按住 → 临时隐藏覆盖层内容（"透视"原文）
-            self._peeking = True
-            self._preview.hide()
-            self.update()
-        else:
-            super().keyPressEvent(event)
-
-    def keyReleaseEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            self._peeking = False
-            if self._preview.has_content:
-                self._preview.show()
-            self.update()
-        else:
-            super().keyReleaseEvent(event)
-
     # ------------------------------------------------------------------
     # 右键菜单操作
     # ------------------------------------------------------------------
 
     def _copy_all_text(self) -> None:
-        """复制所有翻译文本到剪贴板。"""
         texts = [b.translated_text for b in self._render_blocks]
         if texts:
             QApplication.clipboard().setText("\n".join(texts))
-            logger.debug("已复制 %d 段译文到剪贴板", len(texts))
 
     def _request_retranslate(self) -> None:
-        """发射重新翻译信号。"""
         bbox = (self._win_x, self._win_y, self.width(), self.height())
         self.sig_retranslate.emit(bbox)
 
     def _open_chat(self) -> None:
-        """发射智能对话信号，携带当前所有文本。"""
         texts = [b.translated_text for b in self._render_blocks]
         if texts:
             self.sig_open_chat.emit("\n".join(texts))
 
     def _sync_preview(self) -> None:
-        """拖拽 / 缩放后同步 ContextPreviewPanel 位置并发射信号。"""
         bbox = (self.x(), self.y(), self.width(), self.height())
         self._preview.position_beside(bbox)
         self.sig_geometry_changed.emit(bbox)

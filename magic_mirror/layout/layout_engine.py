@@ -158,20 +158,16 @@ _FONT_GROUP_TOLERANCE = 3.0
 
 
 def _unify_font_sizes(para_data: List[dict]) -> None:
-    """将原始字号相近的段落组统一为组内最小字号。
+    """统一同级段落字号，并确保标题字号 > 正文字号。
 
-    同一页面中原本相同字体大小的文本行，OCR 估算的 font_size_est
-    可能略有偏差，但翻译后中文长度不同导致 _fit_font_size 得到
-    差异较大的字号（短译文保持大字号，长译文被缩小），视觉上不协调。
-
-    策略：
-      1. 按 avg_font_est 排序后贪心分组（相邻差 ≤ 容差 → 同组）
-      2. 每组内取最小 font_size，统一赋给组内所有段落
+    两步策略：
+      1. 按 avg_font_est 贪心分组 → 组内统一为最小 font_size
+      2. 确保 bold（标题）段落的字号严格大于非 bold（正文）段落
     """
     if len(para_data) <= 1:
         return
 
-    # 构建 (index, avg_font_est) 并按 avg_font_est 排序
+    # ── 第一步：同级统一 ──
     indexed = sorted(enumerate(para_data), key=lambda t: t[1]["avg_font_est"])
 
     groups: List[List[int]] = [[indexed[0][0]]]
@@ -184,13 +180,25 @@ def _unify_font_sizes(para_data: List[dict]) -> None:
             groups.append([idx])
         prev_est = d["avg_font_est"]
 
-    # 每组统一为组内最小 font_size
     for group in groups:
         if len(group) < 2:
             continue
         min_fs = min(para_data[i]["font_size"] for i in group)
         for i in group:
             para_data[i]["font_size"] = min_fs
+
+    # ── 第二步：确保标题 > 正文 ──
+    bold_indices = [i for i, d in enumerate(para_data) if d.get("font_bold")]
+    body_indices = [i for i, d in enumerate(para_data) if not d.get("font_bold")]
+
+    if not bold_indices or not body_indices:
+        return
+
+    max_body_fs = max(para_data[i]["font_size"] for i in body_indices)
+
+    for i in bold_indices:
+        if para_data[i]["font_size"] <= max_body_fs:
+            para_data[i]["font_size"] = max_body_fs + 2
 
 
 # ------------------------------------------------------------------
@@ -372,6 +380,30 @@ def _merged_bbox(bboxes: list) -> Tuple[int, int, int, int]:
 # 字号计算
 # ------------------------------------------------------------------
 
+def _pixel_size_for_line_height(
+    family: str, bold: bool, italic: bool, target_height: float,
+) -> int:
+    """找到使 QFontMetrics.height() 最接近 target_height 的 pixelSize。
+
+    QFont.setPixelSize(N) 设置的是 em-square 高度，
+    实际渲染行高 = ascent + descent，通常比 N 大 20-40%。
+    此函数通过一次探测计算修正比率。
+    """
+    probe = max(int(target_height), 8)
+    font = QFont(family)
+    font.setPixelSize(probe)
+    if bold:
+        font.setBold(True)
+    if italic:
+        font.setItalic(True)
+    fm = QFontMetrics(font)
+    actual = fm.height()
+    if actual <= 0:
+        return probe
+    ratio = probe / actual
+    return max(round(target_height * ratio), 8)
+
+
 def _fit_font_size(
     text: str,
     font_size_est: float,
@@ -382,32 +414,32 @@ def _fit_font_size(
     font_bold: bool = False,
     font_italic: bool = False,
 ) -> Tuple[int, int]:
-    """二分查找在 bbox 内不溢出的最大字号。
+    """以 OCR bbox 高度为目标行高，计算匹配的 pixelSize。
 
-    使用 QFontMetrics.boundingRect + TextWordWrap 精确测量
-    自动换行后的文本尺寸，支持段落级长文本的重流。
-
-    以 OCR 估算字号为基准，上限不超过 1.1×，确保位置误差 < 2%。
+    font_size_est 是 OCR 检测到的 bbox 高度（像素），代表原文的实际行高。
+    QFont.setPixelSize 设置的是 em-square 而非行高，需要修正比率。
+    仅在文本溢出 bbox 时缩小。
 
     Args:
         text: 待渲染文本（可能含 \\n）。
-        font_size_est: OCR 估算的原始字号。
+        font_size_est: OCR 估算的行高（像素）。
         bbox_width: bbox 像素宽度。
         bbox_height: bbox 像素高度。
-        n_lines: 文本行数（参考，实际以测量为准）。
-        font_family: 字体名称（空则使用默认中文字体）。
+        n_lines: 文本行数。
+        font_family: 字体名称。
         font_bold: 是否粗体。
         font_italic: 是否斜体。
 
     Returns:
-        (final_font_size, max_line_render_width)
+        (final_pixel_size, max_line_render_width)
     """
     family = font_family or FONT_FAMILY_ZH
-    base_size = max(int(font_size_est * FONT_SIZE_SCALE * 1.1), 8)
-    min_size = max(int(font_size_est * FONT_SIZE_SCALE * MAX_FONT_SHRINK_RATIO), 8)
+    target_size = _pixel_size_for_line_height(
+        family, font_bold, font_italic, font_size_est * FONT_SIZE_SCALE,
+    )
+    min_size = max(int(target_size * MAX_FONT_SHRINK_RATIO), 8)
 
     def _fits(size: int) -> Tuple[bool, int]:
-        """检查字号是否在 bbox 内不溢出（支持自动换行）。"""
         font = QFont(family)
         font.setPixelSize(size)
         if font_bold:
@@ -423,13 +455,11 @@ def _fit_font_size(
         fits = br.height() <= bbox_height if bbox_height > 0 else True
         return fits, br.width()
 
-    # 先检查 base_size 是否已经不溢出
-    ok, max_w = _fits(base_size)
+    ok, max_w = _fits(target_size)
     if ok:
-        return base_size, max_w
+        return target_size, max_w
 
-    # 二分查找：lo 不溢出或可能溢出，hi 一定溢出
-    lo, hi = min_size, base_size
+    lo, hi = min_size, target_size
     best_size = min_size
     _, best_w = _fits(min_size)
 
