@@ -31,7 +31,7 @@ a = Analysis(
         # QuickDict 资源
         ("quickdict/assets/icon.png", "quickdict/assets"),
         ("quickdict/styles/popup.qss", "quickdict/styles"),
-        ("stardict.py", "."),
+        ("ecdict/stardict.py", "."),
     ] + _rapidocr_datas + _wordninja_datas,
     hiddenimports=[
         "pynput.keyboard._win32",

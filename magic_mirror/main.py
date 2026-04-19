@@ -47,6 +47,24 @@ def create_pipeline() -> TranslatePipeline:
     )
 
 
+def create_pipeline_ocr_only() -> TranslatePipeline:
+    """创建仅 OCR 的管线（翻译不可用时的降级方案）。"""
+    from magic_mirror.interfaces.types import TranslatedBlock
+
+    class _NoOpTranslator:
+        def translate(self, blocks):
+            return [TranslatedBlock(source=b, translated_text=b.text) for b in blocks]
+        def translate_stream(self, blocks):
+            yield from self.translate(blocks)
+
+    return TranslatePipeline(
+        capture=PilScreenCapture(),
+        ocr=RapidOcrEngine(),
+        translator=_NoOpTranslator(),
+        layout=DefaultLayoutEngine(),
+    )
+
+
 # ------------------------------------------------------------------
 # 管线工作线程
 # ------------------------------------------------------------------
@@ -237,6 +255,7 @@ class StreamTranslateApp(QObject):
 
         self._pipeline = pipeline
         self._pending_mode = self._MODE_TRANSLATE
+        self._config_error: str | None = None
 
         # UI 组件
         self._selector = RegionSelector()
@@ -308,9 +327,34 @@ class StreamTranslateApp(QObject):
             overlay.close_overlay()
         self._overlays.clear()
 
+    def set_config_error(self, msg: str) -> None:
+        """标记 LLM 配置缺失，启动后通过托盘提示用户。"""
+        self._config_error = msg
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(1000, self._show_config_hint)
+
+    def _show_config_hint(self) -> None:
+        self._tray.showMessage(
+            "Magic Mirror",
+            "LLM not configured — translate disabled.\n"
+            "Place llm_providers.yaml next to exe.\n"
+            "OCR text extraction (Ctrl+Alt+C) still works.",
+            QSystemTrayIcon.MessageIcon.Warning,
+            5000,
+        )
+
     @pyqtSlot()
     def _on_hotkey(self) -> None:
         """翻译热键触发 → 启动框选。"""
+        if self._config_error:
+            self._tray.showMessage(
+                "Magic Mirror",
+                "Translation unavailable — LLM not configured.\n"
+                "Place llm_providers.yaml and .env next to the exe.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                3000,
+            )
+            return
         self._pending_mode = self._MODE_TRANSLATE
         self._selector.start()
 
@@ -610,13 +654,18 @@ def main() -> None:
     # 加载配置
     load_env()
 
+    config_err = None
     try:
         pipeline = create_pipeline()
-    except FileNotFoundError as e:
-        logger.error("配置缺失:\n%s", e)
-        sys.exit(1)
+    except (FileNotFoundError, KeyError, ValueError) as e:
+        logger.warning("LLM config not ready (translation disabled): %s", e)
+        config_err = str(e)
+        pipeline = create_pipeline_ocr_only()
 
     controller = StreamTranslateApp(pipeline)  # noqa: F841 — prevent GC
+
+    if config_err:
+        controller.set_config_error(config_err)
 
     # 退出时清理 listener
     app.aboutToQuit.connect(controller.cleanup)

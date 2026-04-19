@@ -29,7 +29,7 @@ a = Analysis(
         ("quickdict/assets/icon.png", "quickdict/assets"),
         ("quickdict/styles/popup.qss", "quickdict/styles"),
         # stardict.py 需要在运行时被 import
-        ("stardict.py", "."),
+        ("ecdict/stardict.py", "."),
     ] + _rapidocr_datas,
     hiddenimports=[
         "pynput.keyboard._win32",

@@ -14,7 +14,7 @@ from quickdict.config import FROZEN
 if FROZEN:
     _STARDICT_DIR = sys._MEIPASS  # type: ignore[attr-defined]
 else:
-    _STARDICT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _STARDICT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ecdict")
 
 if _STARDICT_DIR not in sys.path:
     sys.path.insert(0, _STARDICT_DIR)

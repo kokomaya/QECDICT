@@ -11,6 +11,12 @@ echo   QuickDict Build  v%VER%
 echo ============================================
 echo.
 
+REM -- best-effort cleanup of running processes that may lock release files
+echo [0/4] Stopping running QuickDict processes (if any) ...
+taskkill /f /im QuickDict.exe >nul 2>&1
+taskkill /f /im LinguaLens.exe >nul 2>&1
+echo        OK
+
 REM -- check venv
 if not exist ".venv\Scripts\python.exe" (
     echo [ERROR] .venv not found, run setup.bat first
@@ -47,25 +53,47 @@ echo        OK
 
 REM -- release dir
 set RELEASE_DIR=release\v%VER%
-set APP_DIR=%RELEASE_DIR%\QuickDict
-set DB_PKG=%RELEASE_DIR%\QuickDict-data
 
 echo [3/4] Preparing release dir (v%VER%) ...
 
-if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
+if exist "%RELEASE_DIR%" (
+    rmdir /s /q "%RELEASE_DIR%"
+    if exist "%RELEASE_DIR%" (
+        echo [WARN] Cannot clean %RELEASE_DIR% because files are still in use.
+        for /f %%t in ('powershell -NoProfile -Command "(Get-Date).ToString(\"yyyyMMdd-HHmmss\")"') do set BUILD_TS=%%t
+        set RELEASE_DIR=release\v%VER%_%BUILD_TS%
+        echo [WARN] Fallback release dir: %RELEASE_DIR%
+    )
+)
+
+set APP_DIR=%RELEASE_DIR%\QuickDict
+set DB_PKG=%RELEASE_DIR%\QuickDict-data
 mkdir "%APP_DIR%"
 mkdir "%DB_PKG%\data"
 
 xcopy "dist\QuickDict\*" "%APP_DIR%\" /e /q /y >nul
-
-copy "data\ecdict.db" "%DB_PKG%\data\ecdict.db" >nul
-
-if not exist "quickdict\使用说明.md" (
-    echo [ERROR] quickdict\使用说明.md not found
+if errorlevel 1 (
+    echo [ERROR] Failed to copy build output into %APP_DIR%
+    echo         Please make sure release files are not locked by another process.
     pause
     exit /b 1
 )
-copy "quickdict\使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
+
+copy "data\ecdict.db" "%DB_PKG%\data\ecdict.db" >nul
+if errorlevel 1 (
+    echo [ERROR] Failed to copy data\ecdict.db
+    echo         The database file may be locked by a running app.
+    pause
+    exit /b 1
+)
+
+if exist "quickdict\使用说明.md" (
+    copy "quickdict\使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
+) else if exist "quickdict\README.md" (
+    copy "quickdict\README.md" "%RELEASE_DIR%\README.md" >nul
+) else (
+    echo [WARN] No guide markdown found in quickdict\
+)
 
 REM -- trim
 echo [3.5/4] Trimming ...
