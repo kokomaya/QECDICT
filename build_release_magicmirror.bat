@@ -60,45 +60,79 @@ mkdir "%APP_DIR%"
 
 xcopy "dist\MagicMirror\*" "%APP_DIR%\" /e /q /y >nul
 
-REM -- trim
+REM -- trim: remove unused components
 echo [3.5/4] Trimming ...
 
+REM OpenCV video codecs (not needed)
 for %%f in ("%APP_DIR%\_internal\cv2\opencv_videoio_ffmpeg*.dll") do (
     if exist "%%~f" del /q "%%~f"
 )
 
+REM Qt WebEngine (replaced by QTextBrowser)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6WebEngineCore.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6WebEngineCore.dll"
+)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\QtWebEngineProcess.exe" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\QtWebEngineProcess.exe"
+)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\resources" (
+    rmdir /s /q "%APP_DIR%\_internal\PyQt6\Qt6\resources"
+)
+
+REM Qt translations
 if exist "%APP_DIR%\_internal\PyQt6\Qt6\translations" (
     rmdir /s /q "%APP_DIR%\_internal\PyQt6\Qt6\translations"
 )
 
-if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Pdf.dll" (
-    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Pdf.dll"
+REM Qt QML/Quick (not used)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\qml" (
+    rmdir /s /q "%APP_DIR%\_internal\PyQt6\Qt6\qml"
+)
+for %%f in ("%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Quick*.dll") do (
+    if exist "%%~f" del /q "%%~f"
+)
+for %%f in ("%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6Qml*.dll") do (
+    if exist "%%~f" del /q "%%~f"
+)
+if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6ShaderTools.dll" (
+    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\Qt6ShaderTools.dll"
 )
 
+REM Qt modules not used
+for %%d in (Qt6Pdf Qt6OpenGL Qt6Network Qt6Multimedia Qt6MultimediaWidgets Qt6Positioning Qt6WebChannel opengl32sw Qt6Quick3DPhysics Qt6Quick3DRuntimeRender Qt6Quick3DAssetImport Qt6Quick3DUtils) do (
+    if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\%%d.dll" (
+        del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\%%d.dll"
+    )
+)
+
+REM Unused image format plugins
+for %%d in (qpdf qwebp qtiff) do (
+    if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\%%d.dll" (
+        del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\%%d.dll"
+    )
+)
+
+REM Unused Qt plugins
+for %%d in (position networkinformation) do (
+    if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\%%d" (
+        rmdir /s /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\%%d"
+    )
+)
+
+REM Pillow AVIF
 for %%f in ("%APP_DIR%\_internal\PIL\_avif*.pyd") do (
     if exist "%%~f" del /q "%%~f"
 )
 
-if exist "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll" (
-    del /q "%APP_DIR%\_internal\PyQt6\Qt6\bin\opengl32sw.dll"
-)
-
-if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll" (
-    del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qwebp.dll"
-)
-if exist "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qtiff.dll" (
-    del /q "%APP_DIR%\_internal\PyQt6\Qt6\plugins\imageformats\qtiff.dll"
-)
-
 echo        OK
 
-REM -- done
+REM -- size report
+echo.
 echo [4/4] Done!
+for /f "tokens=3" %%s in ('dir /s "%APP_DIR%" ^| findstr "File(s)"') do set TOTAL_SIZE=%%s
+echo   Total size: %TOTAL_SIZE% bytes
 echo.
 echo   Release: %RELEASE_DIR%\
-echo.
-echo   %APP_DIR%\
-echo     MagicMirror.exe
-echo     _internal\
+echo   Run: %APP_DIR%\MagicMirror.exe
 echo.
 pause

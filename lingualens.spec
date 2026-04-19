@@ -19,6 +19,10 @@ _UPX_DIR = os.path.join(_ROOT, "tools", "upx-4.2.4-win64")
 
 _rapidocr_datas = collect_data_files("rapidocr_onnxruntime", include_py_files=False)
 
+import wordninja as _wn
+_wn_dir = os.path.join(os.path.dirname(os.path.abspath(_wn.__file__)), "wordninja")
+_wordninja_datas = [(_wn_dir, "wordninja")]
+
 a = Analysis(
     ["lingualens_main.py"],
     pathex=[_ROOT],
@@ -31,12 +35,21 @@ a = Analysis(
         # MagicMirror 配置
         ("magic_mirror/config/.env", "magic_mirror/config"),
         ("magic_mirror/config/llm_providers.yaml", "magic_mirror/config"),
-    ] + _rapidocr_datas,
+    ] + _rapidocr_datas + _wordninja_datas,
     hiddenimports=[
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
         "uiautomation",
         "wordninja",
+        "markdown.extensions.fenced_code",
+        "markdown.extensions.codehilite",
+        "markdown.extensions.tables",
+        "markdown.extensions.nl2br",
+        "markdown.extensions.extra",
+        "pygments",
+        "pygments.lexers",
+        "pygments.formatters",
+        "pygments.formatters.html",
     ],
     hookspath=[],
     hooksconfig={},

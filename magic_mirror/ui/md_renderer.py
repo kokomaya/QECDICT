@@ -19,9 +19,9 @@ from magic_mirror.ui.chat_theme import (
 # Pygments 代码高亮 — 暗色主题内联样式
 _MD = markdown.Markdown(
     extensions=[
-        "fenced_code",
-        "tables",
-        "sane_lists",
+        "markdown.extensions.fenced_code",
+        "markdown.extensions.tables",
+        "markdown.extensions.sane_lists",
         CodeHiliteExtension(noclasses=True, pygments_style="monokai"),
     ],
 )
