@@ -1,17 +1,42 @@
-"""配置加载器 — 负责加载 LLM 后端配置和环境变量凭证"""
+"""配置加载器 — 负责加载 LLM 后端配置和环境变量凭证
+
+配置文件查找顺序（打包后安全）：
+  1. exe 同级目录（用户自行放置，不打包进 exe）
+  2. 源码 config/ 目录（开发环境）
+"""
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
 
-_CONFIG_DIR = Path(__file__).resolve().parent
+
+def _resolve_config_dir() -> Path:
+    """确定配置文件所在目录。
+
+    打包后优先使用 exe 同级目录，允许用户在外部放置配置。
+    """
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+    else:
+        exe_dir = Path.cwd()
+
+    src_dir = Path(__file__).resolve().parent
+
+    # 优先 exe 同级（打包环境），其次源码目录（开发环境）
+    if (exe_dir / "llm_providers.yaml").exists():
+        return exe_dir
+    return src_dir
+
+
+_CONFIG_DIR = _resolve_config_dir()
 
 _LLM_CONFIG_FILE = _CONFIG_DIR / "llm_providers.yaml"
-_LLM_EXAMPLE_FILE = _CONFIG_DIR / "llm_providers.example.yaml"
+_LLM_EXAMPLE_FILE = Path(__file__).resolve().parent / "llm_providers.example.yaml"
 _ENV_FILE = _CONFIG_DIR / ".env"
 
 

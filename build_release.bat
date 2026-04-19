@@ -60,12 +60,12 @@ xcopy "dist\QuickDict\*" "%APP_DIR%\" /e /q /y >nul
 
 copy "data\ecdict.db" "%DB_PKG%\data\ecdict.db" >nul
 
-if not exist "使用说明.md" (
-    echo [ERROR] 使用说明.md not found
+if not exist "quickdict\使用说明.md" (
+    echo [ERROR] quickdict\使用说明.md not found
     pause
     exit /b 1
 )
-copy "使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
+copy "quickdict\使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
 
 REM -- trim
 echo [3.5/4] Trimming ...

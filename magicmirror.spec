@@ -23,10 +23,7 @@ a = Analysis(
     ["magic_mirror/main.py"],
     pathex=[_ROOT],
     binaries=[],
-    datas=[
-        ("magic_mirror/config/.env", "magic_mirror/config"),
-        ("magic_mirror/config/llm_providers.yaml", "magic_mirror/config"),
-    ] + _rapidocr_datas + _wordninja_datas,
+    datas=_rapidocr_datas + _wordninja_datas,
     hiddenimports=[
         "pynput.keyboard._win32",
         "pynput.mouse._win32",

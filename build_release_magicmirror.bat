@@ -26,13 +26,9 @@ if errorlevel 1 (
 )
 echo        OK
 
-REM -- config files
-if not exist "magic_mirror\config\.env" (
-    echo [WARN] magic_mirror\config\.env not found, creating empty
-    echo. > magic_mirror\config\.env
-)
-if not exist "magic_mirror\config\llm_providers.yaml" (
-    echo [ERROR] magic_mirror\config\llm_providers.yaml not found
+REM -- check example config exists
+if not exist "magic_mirror\config\llm_providers.example.yaml" (
+    echo [ERROR] magic_mirror\config\llm_providers.example.yaml not found
     pause
     exit /b 1
 )
@@ -59,6 +55,11 @@ if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%APP_DIR%"
 
 xcopy "dist\MagicMirror\*" "%APP_DIR%\" /e /q /y >nul
+
+REM -- copy example config files (user must rename and edit)
+copy "magic_mirror\config\llm_providers.example.yaml" "%APP_DIR%\llm_providers.example.yaml" >nul
+copy "magic_mirror\config\.env.example" "%APP_DIR%\.env.example" >nul
+copy "magic_mirror\README.md" "%APP_DIR%\README.md" >nul
 
 REM -- trim: remove unused components
 echo [3.5/4] Trimming ...

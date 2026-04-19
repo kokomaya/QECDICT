@@ -32,9 +32,6 @@ a = Analysis(
         ("quickdict/assets/icon.png", "quickdict/assets"),
         ("quickdict/styles/popup.qss", "quickdict/styles"),
         ("stardict.py", "."),
-        # MagicMirror 配置
-        ("magic_mirror/config/.env", "magic_mirror/config"),
-        ("magic_mirror/config/llm_providers.yaml", "magic_mirror/config"),
     ] + _rapidocr_datas + _wordninja_datas,
     hiddenimports=[
         "pynput.keyboard._win32",

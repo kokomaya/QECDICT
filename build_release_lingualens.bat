@@ -24,8 +24,8 @@ if not exist "data\ecdict.db" (
     exit /b 1
 )
 
-if not exist "magic_mirror\config\llm_providers.yaml" (
-    echo [ERROR] magic_mirror\config\llm_providers.yaml not found
+if not exist "magic_mirror\config\llm_providers.example.yaml" (
+    echo [ERROR] magic_mirror\config\llm_providers.example.yaml not found
     pause
     exit /b 1
 )
@@ -38,12 +38,6 @@ if errorlevel 1 (
     .venv\Scripts\pip install pyinstaller -q
 )
 echo        OK
-
-REM -- config
-if not exist "magic_mirror\config\.env" (
-    echo [WARN] magic_mirror\config\.env not found, creating empty
-    echo. > magic_mirror\config\.env
-)
 
 REM -- build
 echo [2/4] Building LinguaLens.exe (UPX) ...
@@ -72,9 +66,16 @@ xcopy "dist\LinguaLens\*" "%APP_DIR%\" /e /q /y >nul
 
 copy "data\ecdict.db" "%DB_PKG%\data\ecdict.db" >nul
 
-if exist "使用说明.md" (
-    copy "使用说明.md" "%RELEASE_DIR%\使用说明.md" >nul
+if exist "quickdict\使用说明.md" (
+    copy "quickdict\使用说明.md" "%RELEASE_DIR%\QuickDict使用说明.md" >nul
 )
+if exist "magic_mirror\README.md" (
+    copy "magic_mirror\README.md" "%RELEASE_DIR%\MagicMirror使用说明.md" >nul
+)
+
+REM -- copy example config files for MagicMirror
+copy "magic_mirror\config\llm_providers.example.yaml" "%APP_DIR%\llm_providers.example.yaml" >nul
+copy "magic_mirror\config\.env.example" "%APP_DIR%\.env.example" >nul
 
 REM -- trim
 echo [3.5/4] Trimming ...
