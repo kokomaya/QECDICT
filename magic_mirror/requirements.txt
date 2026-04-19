@@ -1,0 +1,14 @@
+PyQt6
+Pillow
+rapidocr-onnxruntime
+onnxruntime-directml
+opencv-python-headless
+numpy
+pynput
+dxcam
+openai
+python-dotenv
+pyyaml
+markdown
+pygments
+wordninja

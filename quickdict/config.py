@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 # ── 冻结/开发 环境检测 ────────────────────────────────────
 FROZEN = getattr(sys, "frozen", False)
@@ -48,8 +48,11 @@ _SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 _DEFAULTS = {
     "capture_mode": "ocr",  # auto / uia / ocr
     "trigger_mode": "ctrl",  # hover / ctrl
-    "show_region": False,     # 截图区域可视化
-    "show_status": False,     # 取词状态指示器
+    "show_region": True,      # 截图区域可视化
+    "show_status": True,      # 取词状态指示器
+    "region_half_w": 200,     # 截图区域半宽（逻辑像素）
+    "region_half_h": 80,      # 截图区域半高（逻辑像素）
+    "region_opacity": 15,     # 截图区域填充透明度 (0-255)
 }
 
 

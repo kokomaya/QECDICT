@@ -9,19 +9,19 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget, QApplication
 
-from quickdict._ocr_capture import _HALF_W, _HALF_H, _get_screen_scale
+import quickdict._ocr_capture as _ocr_capture
 
 
 class CaptureRegionOverlay(QWidget):
     """半透明矩形框，显示 OCR 截图区域。"""
 
     _BORDER_COLOR = QColor(67, 97, 238, 160)   # 蓝色边框
-    _FILL_COLOR = QColor(67, 97, 238, 15)      # 极淡填充
     _BORDER_WIDTH = 2
     _HIDE_DELAY_MS = 1500                       # 自动隐藏延时
 
     def __init__(self):
         super().__init__()
+        self._fill_color = QColor(67, 97, 238, 15)  # 可调填充色
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -31,16 +31,26 @@ class CaptureRegionOverlay(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.hide)
 
+        # 预渲染：在屏幕外闪一次，避免首次显示时白色闪烁
+        self.setGeometry(-1, -1, 1, 1)
+        self.show()
+        self.hide()
+
+    def set_fill_opacity(self, alpha: int):
+        """设置填充透明度 (0-255)。"""
+        self._fill_color = QColor(67, 97, 238, max(0, min(255, alpha)))
+
     def show_at(self, x: int, y: int):
         """在鼠标 (x, y) 周围显示截图区域框。"""
-        scale = _get_screen_scale()
-        hw = int(_HALF_W * scale)
-        hh = int(_HALF_H * scale)
+        scale = _ocr_capture._get_screen_scale()
+        hw = int(_ocr_capture._HALF_W * scale)
+        hh = int(_ocr_capture._HALF_H * scale)
 
         # 全局屏幕坐标 → 窗口位置和大小
         left = x - hw
@@ -64,7 +74,7 @@ class CaptureRegionOverlay(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         # 淡填充
-        p.fillRect(self.rect(), self._FILL_COLOR)
+        p.fillRect(self.rect(), self._fill_color)
         # 边框
         pen = QPen(self._BORDER_COLOR, self._BORDER_WIDTH)
         pen.setStyle(Qt.PenStyle.DashLine)

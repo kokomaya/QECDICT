@@ -20,3 +20,13 @@ dist/
 build/
 
 data/
+
+# StreamTranslate 敏感配置
+magic_mirror/config/.env
+magic_mirror/config/llm_providers.yaml
+_Client_Template.py
+
+
+.env
+
+.claude/

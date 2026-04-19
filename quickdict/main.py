@@ -19,6 +19,8 @@ from quickdict.popup_widget import PopupWidget, LoadingDot
 from quickdict.app import TrayManager, StatusIndicator
 from quickdict._lookup_worker import LookupWorker
 from quickdict._capture_overlay import CaptureRegionOverlay
+from quickdict._ocr_capture import set_region_size
+from quickdict._region_settings import RegionSettingsDialog
 
 
 # ── pynput 线程 → Qt 主线程桥接 ───────────────────────────
@@ -65,6 +67,13 @@ class QuickDictApp(QObject):
         self._show_region = self._settings.get("show_region", False)
         self._status_indicator = StatusIndicator()
         self._show_status = self._settings.get("show_status", False)
+
+        # 恢复截图区域参数
+        region_hw = self._settings.get("region_half_w", 200)
+        region_hh = self._settings.get("region_half_h", 80)
+        region_op = self._settings.get("region_opacity", 15)
+        set_region_size(region_hw, region_hh)
+        self._region_overlay.set_fill_opacity(region_op)
 
         # 后台查询线程（sqlite3 连接必须在使用线程中创建）
         self._worker = LookupWorker(db_path)
@@ -113,12 +122,14 @@ class QuickDictApp(QObject):
         self._tray.sig_trigger_mode_changed.connect(self._on_trigger_mode_changed)
         self._tray.sig_toggle_debug_region.connect(self._on_toggle_debug_region)
         self._tray.sig_toggle_status_indicator.connect(self._on_toggle_status_indicator)
+        self._tray.sig_region_settings.connect(self._on_open_region_settings)
         self._tray.sig_quit.connect(self._quit)
         self._tray.set_capture_mode_checked(saved_mode_key)
         self._tray.set_trigger_mode_checked(self._trigger_mode)
         self._tray.set_debug_region_checked(self._show_region)
         self._tray.set_status_indicator_checked(self._show_status)
         self._tray.show()
+        self._region_dialog: RegionSettingsDialog | None = None
 
         # 启动键盘监听
         self._hotkey.start()
@@ -215,6 +226,28 @@ class QuickDictApp(QObject):
             self._status_indicator.show()
         else:
             self._status_indicator.hide()
+
+    def _on_open_region_settings(self):
+        """打开截图区域设置对话框。"""
+        if self._region_dialog and self._region_dialog.isVisible():
+            self._region_dialog.activateWindow()
+            return
+        self._region_dialog = RegionSettingsDialog(
+            half_w=self._settings.get("region_half_w", 200),
+            half_h=self._settings.get("region_half_h", 80),
+            opacity=self._settings.get("region_opacity", 15),
+        )
+        self._region_dialog.sig_applied.connect(self._on_region_applied)
+        self._region_dialog.show()
+
+    def _on_region_applied(self, half_w: int, half_h: int, opacity: int):
+        """截图区域设置对话框确定。"""
+        set_region_size(half_w, half_h)
+        self._region_overlay.set_fill_opacity(opacity)
+        self._settings["region_half_w"] = half_w
+        self._settings["region_half_h"] = half_h
+        self._settings["region_opacity"] = opacity
+        save_settings(self._settings)
 
     def _on_ctrl_capture(self):
         """Ctrl 键取词：在当前鼠标位置立即取词。"""
