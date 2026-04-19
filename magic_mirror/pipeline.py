@@ -182,9 +182,13 @@ _PARA_MERGE_Y_GAP = 0.5
 # 字号差异超过此比例则视为不同层级（如标题 vs 正文），不合并
 _FONT_SIZE_RATIO_THRESHOLD = 0.25
 # 单组最大行数，防止整页合并为一个块
-_MAX_GROUP_LINES = 6
+_MAX_GROUP_LINES = 4
 # 列表项前缀（文本以这些开头时独立成段）
 _LIST_PREFIXES = ("•", "·", "-", "–", "—", "*", "►", "▪", "■", "○", "●")
+# 左缩进变化超过此像素数则视为不同层级，不合并
+_INDENT_SHIFT_PX = 15
+# 数字编号列表正则
+_RE_NUMBERED_LIST = re.compile(r"^\s*\d+[\.\)]\s")
 
 
 def _group_text_blocks(text_blocks: List[TextBlock]) -> List[TextBlock]:
@@ -217,9 +221,16 @@ def _group_text_blocks(text_blocks: List[TextBlock]) -> List[TextBlock]:
 
 def _should_merge_tb(a: TextBlock, b: TextBlock) -> bool:
     """判断两个相邻 TextBlock 是否应合并为同一段落。"""
-    # 列表项独立成段
     b_text = b.text.strip()
+
+    # 列表项独立成段：bullet 前缀
     if b_text and b_text[0] in _LIST_PREFIXES:
+        return False
+
+    # 列表项独立成段：数字编号 (1. 2. 3) ...)
+    if _RE_NUMBERED_LIST.match(b_text):
+        return False
+    if _RE_NUMBERED_LIST.match(a.text.strip()):
         return False
 
     # 字号差异检查：防止标题与正文合并
@@ -228,6 +239,15 @@ def _should_merge_tb(a: TextBlock, b: TextBlock) -> bool:
         ratio = abs(a.font_size_est - b.font_size_est) / max_fs
         if ratio > _FONT_SIZE_RATIO_THRESHOLD:
             return False
+
+    a_xs = [pt[0] for pt in a.bbox]
+    b_xs = [pt[0] for pt in b.bbox]
+
+    # 缩进变化检查：左边距偏移大 → 不同层级
+    a_left = min(a_xs)
+    b_left = min(b_xs)
+    if abs(a_left - b_left) > _INDENT_SHIFT_PX:
+        return False
 
     a_ys = [pt[1] for pt in a.bbox]
     a_top, a_bottom = min(a_ys), max(a_ys)
@@ -241,9 +261,7 @@ def _should_merge_tb(a: TextBlock, b: TextBlock) -> bool:
         return False
 
     # X 重叠检查
-    a_xs = [pt[0] for pt in a.bbox]
-    b_xs = [pt[0] for pt in b.bbox]
-    overlap = min(max(a_xs), max(b_xs)) - max(min(a_xs), min(b_xs))
+    overlap = min(max(a_xs), max(b_xs)) - max(a_left, b_left)
     return overlap > 0
 
 
