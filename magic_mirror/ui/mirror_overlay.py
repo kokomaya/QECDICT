@@ -285,6 +285,11 @@ class MirrorOverlay(QWidget):
             QColor(bg[0], bg[1], bg[2], a),
         )
 
+        # 如果译文与原文完全相同（LLM 漏译 fallback），只画背景覆盖原文
+        if (block.source_text
+                and block.translated_text.strip() == block.source_text.strip()):
+            return
+
         # 字体（使用检测到的字体属性，回退到默认中文字体）
         font = QFont(block.font_family or FONT_FAMILY_ZH)
         font.setPixelSize(block.font_size)

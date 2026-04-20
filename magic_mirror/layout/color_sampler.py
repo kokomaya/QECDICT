@@ -179,8 +179,6 @@ def _otsu_masked_color(
 
     # 判断文字是黑底白字还是白底黑字
     bg_lum = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
-    # 如果背景亮 → 文字暗 → 文字在 binary==0 的区域
-    # 如果背景暗 → 文字亮 → 文字在 binary==255 的区域
     if bg_lum > 128:
         text_mask = (binary == 0)
     else:
@@ -190,30 +188,29 @@ def _otsu_masked_color(
     if len(text_pixels) < _MIN_PIXELS_FOR_KMEANS:
         return None
 
-    # 对文字像素做 K-Means (k=2) 取主色
-    data = text_pixels.astype(np.float32)
-    criteria = (
-        cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
-        50, 0.1,
-    )
-    _, labels, centers = cv2.kmeans(
-        data, min(2, len(data)), None, criteria, 10, cv2.KMEANS_PP_CENTERS,
-    )
+    # 直接取文字像素的中值，对纯色文字最稳定准确
+    b = np.median(text_pixels[:, 0])
+    g = np.median(text_pixels[:, 1])
+    r = np.median(text_pixels[:, 2])
+    result = np.array([b, g, r], dtype=np.float32)
 
-    # 选像素最多的簇作为文字颜色
-    counts = np.bincount(labels.flatten(), minlength=len(centers))
-    dominant_idx = int(np.argmax(counts))
-    return centers[dominant_idx]
+    # 检查与背景是否有足够差异，避免采到背景像素
+    bg_bgr = np.array([bg_color[2], bg_color[1], bg_color[0]], dtype=np.float32)
+    if _lab_distance(result, bg_bgr) < 20:
+        return None
+
+    return result
 
 
 def _kmeans_text_color(
     pixels: np.ndarray,
     bg_color: Tuple[int, int, int, int],
 ) -> np.ndarray | None:
-    """K-Means (k=3) 聚类，返回与背景差异最大的簇中心 (BGR)。
+    """K-Means (k=3) 聚类，返回像素最多且与背景有足够差异的簇中心 (BGR)。
 
-    使用 k=3 比 k=2 更能区分背景、文字和过渡色。
-    增加迭代次数和尝试次数以提高收敛精度。
+    策略：按像素数量从多到少排序，跳过与背景太接近的簇，
+    选第一个与背景有足够差异的簇。这样优先取占比最大的文字色，
+    而不是可能是边缘高光/阴影的少数像素。
     """
     data = pixels.astype(np.float32)
     k = min(3, len(data))
@@ -226,22 +223,18 @@ def _kmeans_text_color(
         data, k, None, criteria, 10, cv2.KMEANS_PP_CENTERS,
     )
 
-    # bg_color 是 (R, G, B, A)，转为 BGR 用于距离计算
     bg_bgr = np.array([bg_color[2], bg_color[1], bg_color[0]], dtype=np.float32)
+    counts = np.bincount(labels.flatten(), minlength=len(centers))
 
-    # 选择与背景色 LAB 感知距离最大的簇
-    best_center = None
-    best_dist = -1.0
-    for center in centers:
-        dist = _lab_distance(center, bg_bgr)
-        if dist > best_dist:
-            best_dist = dist
-            best_center = center
+    # 按像素数量从多到少排序
+    sorted_indices = np.argsort(-counts)
 
-    if best_dist < 30:
-        return None
+    for idx in sorted_indices:
+        dist = _lab_distance(centers[idx], bg_bgr)
+        if dist >= 25:
+            return centers[idx]
 
-    return best_center
+    return None
 
 
 def _lab_distance(bgr1: np.ndarray, bgr2: np.ndarray) -> float:
