@@ -485,24 +485,21 @@ def _sample_merged_text_color(
     bboxes: List[list],
     bg_color: Tuple[int, int, int, int],
 ) -> Tuple[int, int, int]:
-    """From paragraph sub-blocks, sample text color and take the median.
+    """从段落内所有子块的 bbox 采样前景色，取与背景差异最大的颜色。
 
-    逐块采色后取中值，避免某个块采色偶然偏差拉偏整体结果。
+    逐块调用 sample_text_color，选与 bg_color 欧氏距离最远者。
     """
-    colors: List[Tuple[int, int, int]] = []
+    best_color: Tuple[int, int, int] = (0, 0, 0)
+    best_dist = -1.0
+
+    bg_bgr = np.array([bg_color[2], bg_color[1], bg_color[0]], dtype=np.float32)
 
     for bbox in bboxes:
         tc = sample_text_color(screenshot, bbox, bg_color)
-        colors.append(tc)
+        tc_bgr = np.array([tc[2], tc[1], tc[0]], dtype=np.float32)
+        dist = _lab_distance(tc_bgr, bg_bgr)
+        if dist > best_dist:
+            best_dist = dist
+            best_color = tc
 
-    if not colors:
-        return (0, 0, 0)
-
-    if len(colors) == 1:
-        return colors[0]
-
-    # 取各通道中值
-    r = int(np.median([c[0] for c in colors]))
-    g = int(np.median([c[1] for c in colors]))
-    b = int(np.median([c[2] for c in colors]))
-    return (r, g, b)
+    return best_color

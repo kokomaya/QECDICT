@@ -178,15 +178,15 @@ class TranslatePipeline:
 # ------------------------------------------------------------------
 
 # 相邻 TextBlock 的 Y 间距低于此比例（相对行高）时合并为同一段落
-_PARA_MERGE_Y_GAP = 1.2
+_PARA_MERGE_Y_GAP = 0.5
 # 字号差异超过此比例则视为不同层级（如标题 vs 正文），不合并
-_FONT_SIZE_RATIO_THRESHOLD = 0.3
+_FONT_SIZE_RATIO_THRESHOLD = 0.25
 # 单组最大行数，防止整页合并为一个块
-_MAX_GROUP_LINES = 8
+_MAX_GROUP_LINES = 4
 # 列表项前缀（文本以这些开头时独立成段）
 _LIST_PREFIXES = ("•", "·", "-", "–", "—", "*", "►", "▪", "■", "○", "●")
 # 左缩进变化超过此像素数则视为不同层级，不合并
-_INDENT_SHIFT_PX = 30
+_INDENT_SHIFT_PX = 15
 # 数字编号列表正则
 _RE_NUMBERED_LIST = re.compile(r"^\s*\d+[\.\)]\s")
 
@@ -260,12 +260,9 @@ def _should_merge_tb(a: TextBlock, b: TextBlock) -> bool:
     if b_top - a_bottom > a_h * _PARA_MERGE_Y_GAP:
         return False
 
-    # X 重叠检查：重叠宽度占较窄一方的 20% 以上即可合并
-    a_w = max(a_xs) - a_left
-    b_w = max(b_xs) - b_left
+    # X 重叠检查
     overlap = min(max(a_xs), max(b_xs)) - max(a_left, b_left)
-    min_w = max(min(a_w, b_w), 1)
-    return overlap > min_w * 0.2
+    return overlap > 0
 
 
 def _merge_tb_group(blocks: List[TextBlock]) -> TextBlock:
