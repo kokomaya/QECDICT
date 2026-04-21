@@ -20,6 +20,9 @@ from magic_mirror.config.settings import (
     OCR_CONFIDENCE_THRESHOLD,
     OCR_DET_BOX_THRESH,
     OCR_DET_BOX_THRESH_LOW,
+    OCR_DET_LIMIT_SIDE_LEN,
+    OCR_DET_UNCLIP_RATIO,
+    OCR_TEXT_SCORE,
     OCR_USE_GPU,
 )
 from magic_mirror.interfaces.types import TextBlock
@@ -139,6 +142,9 @@ class RapidOcrEngine:
             use_dml = OCR_USE_GPU and _has_dml_provider()
             self._ocr = RapidOCR(
                 det_box_thresh=OCR_DET_BOX_THRESH,
+                text_score=OCR_TEXT_SCORE,
+                det_limit_side_len=OCR_DET_LIMIT_SIDE_LEN,
+                det_unclip_ratio=OCR_DET_UNCLIP_RATIO,
                 det_use_dml=use_dml,
                 cls_use_dml=use_dml,
                 rec_use_dml=use_dml,

@@ -6,8 +6,11 @@ HOTKEY_OCR_COPY = "ctrl+alt+c"         # OCR 提取原文并复制到剪贴板
 
 # ── OCR ──
 OCR_CONFIDENCE_THRESHOLD = 0.5
+OCR_TEXT_SCORE = 0.35                       # 最终文本置信度过滤（降低以减少漏检）
 OCR_DET_BOX_THRESH = 0.3
 OCR_DET_BOX_THRESH_LOW = 0.15               # 低阈值二次检测，补漏遗漏文本
+OCR_DET_LIMIT_SIDE_LEN = 960                # 检测输入图像最小边（增大以提升小文字检测）
+OCR_DET_UNCLIP_RATIO = 1.8                  # 检测框扩展比例（增大以减少文字截断）
 OCR_USE_GPU = True                          # 启用 GPU 加速（DirectML，自动回退 CPU）
 OCR_CC_VERIFY_ENABLED = True                # 连通分量验证补漏
 OCR_PAD_BORDER = 12                         # 边界填充像素数（0 = 禁用）
