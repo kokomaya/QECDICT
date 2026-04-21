@@ -1,23 +1,53 @@
 """LinguaLens — QuickDict + MagicMirror 合体，统一托盘入口。"""
 
 import ctypes
+import faulthandler
 import logging
 import os
 import signal
 import sys
+import traceback
+from datetime import datetime
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 
+def _get_log_path() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "lingualens.log")
+    return "lingualens.log"
+
+
 def main() -> None:
     debug = "--debug" in sys.argv
 
-    logging.basicConfig(
-        level=logging.DEBUG if debug else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    # ── 日志配置 ──
+    log_fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+    if debug:
+        log_file = _get_log_path()
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*60}\n[STARTUP] {datetime.now()} frozen={getattr(sys, 'frozen', False)}\n")
+
+        _fault_fh = open(log_file, "a", encoding="utf-8")
+        faulthandler.enable(file=_fault_fh)
+
+        def _excepthook(exc_type, exc_value, exc_tb):
+            with open(log_file, "a", encoding="utf-8") as fh:
+                fh.write(f"\n[UNHANDLED] {datetime.now()}\n")
+                traceback.print_exception(exc_type, exc_value, exc_tb, file=fh)
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+        sys.excepthook = _excepthook
+
+        handlers: list[logging.Handler] = [logging.FileHandler(log_file, encoding="utf-8")]
+        if sys.stderr is not None:
+            handlers.append(logging.StreamHandler())
+        logging.basicConfig(level=logging.DEBUG, format=log_fmt, handlers=handlers, force=True)
+    else:
+        logging.basicConfig(level=logging.WARNING, format=log_fmt)
+
     logger = logging.getLogger("lingualens")
 
     try:
@@ -112,6 +142,10 @@ def _build_tray(app, quickdict, mirror, has_mirror):
         act_close_all = QAction("关闭全部覆盖层", menu)
         act_close_all.triggered.connect(mirror._close_all_overlays)
         menu.addAction(act_close_all)
+
+        act_chat = QAction("AI 聊天 (Ctrl+Alt+D)", menu)
+        act_chat.triggered.connect(mirror._on_chat_hotkey)
+        menu.addAction(act_chat)
 
         menu.addSeparator()
 
