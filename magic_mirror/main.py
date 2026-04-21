@@ -774,7 +774,20 @@ class StreamTranslateApp(QObject):
 # 入口
 # ------------------------------------------------------------------
 
+def _check_single_instance(name: str) -> bool:
+    """尝试创建命名 Mutex，返回 True 表示是首个实例。"""
+    import ctypes
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main() -> None:
+    if not _check_single_instance("Global\\MagicMirror_SingleInstance"):
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0, "Magic Mirror 已在运行中，请关闭后再启动。", "Magic Mirror", 0x40)
+        return
+
     # 解析命令行参数
     debug = "--debug" in sys.argv
 

@@ -387,7 +387,18 @@ class QuickDictApp(QObject):
 
 # ── 入口 ──────────────────────────────────────────────────
 
+def _check_single_instance(name: str) -> bool:
+    """尝试创建命名 Mutex，返回 True 表示是首个实例。"""
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main():
+    if not _check_single_instance("Global\\QuickDict_SingleInstance"):
+        ctypes.windll.user32.MessageBoxW(
+            0, "QuickDict 已在运行中，请关闭后再启动。", "QuickDict", 0x40)
+        return
+
     # 设置 Per-Monitor DPI 感知（必须在 QApplication 之前调用）
     # 确保多显示器不同 DPI 下坐标正确，UI Automation 取词不受影响
     try:

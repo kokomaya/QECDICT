@@ -20,7 +20,18 @@ def _get_log_path() -> str:
     return "lingualens.log"
 
 
+def _check_single_instance(name: str) -> bool:
+    """尝试创建命名 Mutex，返回 True 表示是首个实例。"""
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main() -> None:
+    if not _check_single_instance("Global\\LinguaLens_SingleInstance"):
+        ctypes.windll.user32.MessageBoxW(
+            0, "LinguaLens 已在运行中，请关闭后再启动。", "LinguaLens", 0x40)
+        return
+
     debug = "--debug" in sys.argv
 
     # ── 日志配置 ──
