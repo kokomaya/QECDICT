@@ -13,11 +13,11 @@
 
 | 热键 | 模式 | 流程 |
 |------|------|------|
-| `Ctrl+Alt+Q` | 聊天 | 读取系统选中文本 → **直接打开 ChatDialog** |
+| `Ctrl+Alt+D` | 聊天 | 读取系统选中文本 → **直接打开 ChatDialog** |
 
 交互方式：
 1. 用户在任意应用中通过双击/拖动选中一段文字
-2. 按下 `Ctrl+Alt+Q`
+2. 按下 `Ctrl+Alt+D`
 3. 自动获取选中文本，打开 ChatDialog，文本预填入输入框
 
 与现有 Chat 的区别：
@@ -37,7 +37,7 @@
 ### 方案：模拟 Ctrl+C → 读取剪贴板
 
 ```
-用户选中文本 → 按 Ctrl+Alt+Q → 程序备份剪贴板 → 模拟 Ctrl+C → 读取剪贴板 → 恢复剪贴板 → 打开 ChatDialog
+用户选中文本 → 按 Ctrl+Alt+D → 程序备份剪贴板 → 模拟 Ctrl+C → 读取剪贴板 → 恢复剪贴板 → 打开 ChatDialog
 ```
 
 | 优点 | 缺点 |
@@ -57,7 +57,7 @@
 
 | 文件 | 变更内容 | 风险 |
 |------|---------|------|
-| `magic_mirror/config/settings.py` | 新增 `HOTKEY_CHAT = "ctrl+alt+q"` | 零（仅新增常量） |
+| `magic_mirror/config/settings.py` | 新增 `HOTKEY_CHAT = "Ctrl+Alt+D"` | 零（仅新增常量） |
 | `magic_mirror/main.py` | 新增热键注册 + handler + 剪贴板获取逻辑 | 低（追加代码，不改已有分支） |
 
 ### 4.2 完全不修改的文件
@@ -79,7 +79,7 @@
 # ── 热键 ──
 HOTKEY_TRIGGER = "ctrl+alt+t"
 HOTKEY_OCR_COPY = "ctrl+alt+c"
-HOTKEY_CHAT = "ctrl+alt+q"             # ← 新增：选中文本后直接 AI 聊天
+HOTKEY_CHAT = "Ctrl+Alt+D"             # ← 新增：选中文本后直接 AI 聊天
 ```
 
 ### 5.2 main.py — 新增热键 + handler
@@ -165,7 +165,7 @@ def _on_chat_hotkey(self) -> None:
 在托盘菜单中现有项后追加：
 
 ```python
-chat_action = QAction("AI 聊天 (Ctrl+Alt+Q)", menu)
+chat_action = QAction("AI 聊天 (Ctrl+Alt+D)", menu)
 chat_action.triggered.connect(self._on_chat_hotkey)
 ```
 
@@ -174,7 +174,7 @@ chat_action.triggered.connect(self._on_chat_hotkey)
 ```
 翻译模式:  框选 → 截图 → OCR → 段落合并 → LLM翻译 → 排版 → 覆盖渲染  (~17s)
 提取模式:  框选 → 截图 → OCR → 排版(伪翻译) → TextOverlay            (~5s)
-聊天模式:  选中文本 → Ctrl+Alt+Q → 读剪贴板 → ChatDialog              (~50ms)
+聊天模式:  选中文本 → Ctrl+Alt+D → 读剪贴板 → ChatDialog              (~50ms)
                                                 ↑ 无截图/OCR/翻译/排版
 ```
 
@@ -196,7 +196,7 @@ chat_action.triggered.connect(self._on_chat_hotkey)
 
 | 风险 | 缓解措施 |
 |------|---------|
-| 热键冲突 | `Ctrl+Alt+Q` 无常见系统/IDE 占用；可在 settings.py 自定义 |
+| 热键冲突 | `Ctrl+Alt+D` 无常见系统/IDE 占用；可在 settings.py 自定义 |
 | 模拟 Ctrl+C 覆盖剪贴板 | 备份 → 复制 → 读取 → 恢复，用户无感知 |
 | 部分应用拦截 Ctrl+C（如终端） | 属于极端边界场景，用户可手动复制后使用 |
 | 选中文本为空 | 检测并提示"未检测到选中文本" |

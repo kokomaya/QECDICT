@@ -595,7 +595,7 @@ class StreamTranslateApp(QObject):
 
     @pyqtSlot()
     def _do_grab_and_chat(self) -> None:
-        """延迟回调：获取选中文本并打开聊天。"""
+        """延迟回调：获取选中文本并打开聊天（预填入输入框）。"""
         text = self._grab_selected_text()
         if not text:
             self._tray.showMessage(
@@ -603,7 +603,13 @@ class StreamTranslateApp(QObject):
                 QSystemTrayIcon.MessageIcon.Warning, 2000,
             )
             return
-        self._on_open_chat(text)
+        dialog = ChatDialog(context_text="", prefill=text)
+        if not hasattr(self, "_chat_dialogs"):
+            self._chat_dialogs: List = []
+        self._chat_dialogs.append(dialog)
+        dialog.finished.connect(lambda: self._chat_dialogs.remove(dialog))
+        dialog.show()
+        logger.info("打开 AI 聊天窗口 (预填 %d 字符)", len(text))
 
     @staticmethod
     def _grab_selected_text() -> str:
