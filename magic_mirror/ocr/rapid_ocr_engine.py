@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import List
 
 import numpy as np
@@ -20,6 +21,9 @@ from magic_mirror.config.settings import (
     OCR_CONFIDENCE_THRESHOLD,
     OCR_DET_BOX_THRESH,
     OCR_DET_BOX_THRESH_LOW,
+    OCR_DET_LIMIT_SIDE_LEN,
+    OCR_DET_UNCLIP_RATIO,
+    OCR_TEXT_SCORE,
     OCR_USE_GPU,
 )
 from magic_mirror.interfaces.types import TextBlock
@@ -59,17 +63,31 @@ class RapidOcrEngine:
         if not self._ensure_available():
             return []
 
+        t0 = time.perf_counter()
         variants = generate_variants(image)
+        t_prep = time.perf_counter()
+        logger.info("  OCR 预处理  %.0fms  %d 个变体", (t_prep - t0) * 1000, len(variants))
         candidates: List[TextBlock] = []
 
         orig_h, orig_w = image.shape[:2]
 
-        # 多阈值检测：主阈值 + 低阈值补漏
-        thresholds = [OCR_DET_BOX_THRESH]
+        # 多阈值检测：主阈值 + 低阈值补漏（低阈值仅对原图使用）
+        thresholds_main = [OCR_DET_BOX_THRESH]
+        thresholds_full = [OCR_DET_BOX_THRESH]
         if OCR_DET_BOX_THRESH_LOW < OCR_DET_BOX_THRESH:
-            thresholds.append(OCR_DET_BOX_THRESH_LOW)
+            thresholds_full.append(OCR_DET_BOX_THRESH_LOW)
 
-        for vinfo in variants:
+        # 连续无新增变体计数器（用于早停）——基于去重后的 unique 块数
+        _NO_GAIN_LIMIT = 1
+        no_gain_streak = 0
+        accepted_blocks: List[TextBlock] = []   # 增量去重后的 unique 块
+
+        for vi, vinfo in enumerate(variants):
+            if no_gain_streak >= _NO_GAIN_LIMIT:
+                logger.info("  跳过变体 #%d~#%d（连续 %d 个变体无新增 unique 块）",
+                            vi, len(variants) - 1, _NO_GAIN_LIMIT)
+                break
+
             vh, vw = vinfo.image.shape[:2]
             # 计算缩放（放大变体）和偏移（填充变体）
             eff_w = vw - 2 * vinfo.offset_x if vinfo.offset_x else vw
@@ -77,6 +95,11 @@ class RapidOcrEngine:
             scale_x = orig_w / eff_w if eff_w != orig_w else 1.0
             scale_y = orig_h / eff_h if eff_h != orig_h else 1.0
 
+            # 低阈值仅对原图（第 0 个变体）使用，其余变体只用主阈值
+            thresholds = thresholds_full if vi == 0 else thresholds_main
+            t_vi = time.perf_counter()
+
+            variant_candidates: List[TextBlock] = []
             for thresh in thresholds:
                 raw = self._run_ocr(vinfo.image, det_box_thresh=thresh)
                 if not raw:
@@ -98,20 +121,47 @@ class RapidOcrEngine:
                         for pt in bbox_points
                     ]
 
-                    candidates.append(TextBlock(
+                    variant_candidates.append(TextBlock(
                         text=text,
                         bbox=bbox_points,
                         font_size_est=self._estimate_font_size(bbox_points),
                         confidence=confidence,
                     ))
 
-        # 空间去重：重叠区域 IoU > 阈值时只保留置信度最高的
-        blocks = self._spatial_dedup(candidates)
+            candidates.extend(variant_candidates)
+
+            # 增量去重：合并已有 + 本轮候选，计算 unique 块增量
+            prev_unique = len(accepted_blocks)
+            accepted_blocks = self._spatial_dedup(
+                accepted_blocks + variant_candidates,
+            )
+            new_unique = len(accepted_blocks) - prev_unique
+
+            t_vi_end = time.perf_counter()
+            logger.info("  变体 #%d  %.0fms  +%d 候选  +%d unique (共 %d)",
+                        vi, (t_vi_end - t_vi) * 1000,
+                        len(variant_candidates), new_unique, len(accepted_blocks))
+
+            if new_unique == 0:
+                no_gain_streak += 1
+            else:
+                no_gain_streak = 0
+
+        # 最终去重结果即为 accepted_blocks（已在循环中增量完成）
+        t_det = time.perf_counter()
+        logger.info("  OCR 检测循环  %.0fms  %d 个候选",
+                     (t_det - t_prep) * 1000, len(candidates))
+        blocks = accepted_blocks
+        t_dedup = time.perf_counter()
+        logger.info("  OCR 去重  %.0fms  %d → %d",
+                     (t_dedup - t_det) * 1000, len(candidates), len(blocks))
 
         # 字体属性分析（在原图上分析，保留笔画精度）
         from magic_mirror.ocr.font_analyzer import analyze_font
         for block in blocks:
             block.font_info = analyze_font(image, block.bbox, block.font_size_est)
+        t_font = time.perf_counter()
+        logger.info("  OCR 字体分析  %.0fms", (t_font - t_dedup) * 1000)
 
         # Connected Component 验证：补漏被主检测器遗漏的文本
         from magic_mirror.ocr.cc_verifier import verify_completeness
@@ -119,11 +169,15 @@ class RapidOcrEngine:
             image, blocks,
             lambda crop, thresh: self._run_ocr(crop, det_box_thresh=thresh) or [],
         )
+        t_cc = time.perf_counter()
+        logger.info("  OCR CC验证  %.0fms  → %d 个文本块",
+                     (t_cc - t_font) * 1000, len(blocks))
 
         # 按 Y 坐标（bbox 左上角）排序，从上到下
         blocks.sort(key=lambda b: b.bbox[0][1])
 
-        logger.debug("OCR 识别到 %d 个文本块 (候选 %d)", len(blocks), len(candidates))
+        logger.info("  OCR 总计  %.0fms  %d 个文本块 (候选 %d)",
+                     (t_cc - t0) * 1000, len(blocks), len(candidates))
         return blocks
 
     # ── 惰性加载 ──
@@ -139,6 +193,9 @@ class RapidOcrEngine:
             use_dml = OCR_USE_GPU and _has_dml_provider()
             self._ocr = RapidOCR(
                 det_box_thresh=OCR_DET_BOX_THRESH,
+                text_score=OCR_TEXT_SCORE,
+                det_limit_side_len=OCR_DET_LIMIT_SIDE_LEN,
+                det_unclip_ratio=OCR_DET_UNCLIP_RATIO,
                 det_use_dml=use_dml,
                 cls_use_dml=use_dml,
                 rec_use_dml=use_dml,

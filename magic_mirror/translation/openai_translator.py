@@ -8,6 +8,7 @@ Prompt 构建和响应解析委托给 prompt_templates 模块。
 from __future__ import annotations
 
 import logging
+import time
 from typing import Dict, Iterator, List, Optional
 
 import httpx
@@ -106,6 +107,7 @@ class OpenAITranslator:
 
     def _call_api(self, user_prompt: str) -> Dict[int, str]:
         """发送请求并解析响应，返回 {id: zh} 映射。"""
+        t_api0 = time.perf_counter()
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[
@@ -119,6 +121,8 @@ class OpenAITranslator:
             content = self._collect_stream(response)
         else:
             content = response.choices[0].message.content or ""
+        t_api1 = time.perf_counter()
+        logger.info("  翻译 API 响应  %.0fms", (t_api1 - t_api0) * 1000)
 
         mapping = parse_translation_response(content)
         if not mapping:
@@ -152,6 +156,8 @@ class OpenAITranslator:
             stream=True,
         )
 
+        t_stream0 = time.perf_counter()
+        t_first_token = None
         accumulated = ""
         yielded_ids: set = set()
 
@@ -161,6 +167,10 @@ class OpenAITranslator:
             delta = chunk.choices[0].delta
             if not delta.content:
                 continue
+            if t_first_token is None:
+                t_first_token = time.perf_counter()
+                logger.info("  流式首 token  %.0fms",
+                             (t_first_token - t_stream0) * 1000)
             accumulated += delta.content
 
             # 增量解析已完成的 JSON 对象
@@ -189,6 +199,10 @@ class OpenAITranslator:
                 yield TranslatedBlock(
                     source=blocks[idx], translated_text=zh,
                 )
+
+        t_stream1 = time.perf_counter()
+        logger.info("  流式翻译完成  %.0fms  %d 条",
+                     (t_stream1 - t_stream0) * 1000, len(yielded_ids))
 
         # 未翻译的块回退为原文
         for i, block in enumerate(blocks):

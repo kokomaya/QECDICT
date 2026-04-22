@@ -114,6 +114,18 @@ class OcrCapture:
         logger.debug("OCR 所有变体均未命中")
         return None
 
+    def warmup(self):
+        """预热 OCR 引擎，降低首次取词延迟。"""
+        if not self._ensure_available():
+            return
+        try:
+            import numpy as np
+            # 触发一次最小推理，避免首帧模型初始化抖动。
+            dummy = np.zeros((8, 8, 3), dtype=np.uint8)
+            self._ocr(dummy)
+        except Exception:
+            pass
+
     # ── 懒加载 ────────────────────────────────────────────
 
     def _ensure_available(self) -> bool:

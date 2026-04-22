@@ -24,6 +24,11 @@ class LookupWorker(QObject):
     def init_engine(self):
         """在工作线程中初始化词典引擎（sqlite3 连接必须在使用线程创建）。"""
         self._engine = DictEngine(self._db_path)
+        # 预热首查路径，减少第一次 lookup 的初始化开销。
+        try:
+            self._engine.lookup("the")
+        except Exception:
+            pass
 
     def lookup(self, word: str, fallback_parts):
         """

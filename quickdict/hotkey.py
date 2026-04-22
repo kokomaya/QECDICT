@@ -30,6 +30,7 @@ class HotkeyListener:
         self._active = False
         self._ctrl_release_times: list[float] = []
         self._other_key_pressed = False
+        self._ctrl_is_down = False
         self._listener: Listener | None = None
 
     # ── 公开接口 ──────────────────────────────────────────
@@ -63,13 +64,19 @@ class HotkeyListener:
             self._deactivate()
             return
 
-        # 记录是否有非 Ctrl 键按下（用于排除组合键）
-        if key not in (Key.ctrl_l, Key.ctrl_r):
+        if key in (Key.ctrl_l, Key.ctrl_r):
+            self._ctrl_is_down = True
+            return
+
+        # 仅当 Ctrl 正被按住时，才把非 Ctrl 记为组合键
+        if self._ctrl_is_down:
             self._other_key_pressed = True
 
     def _on_key_release(self, key):
         if key not in (Key.ctrl_l, Key.ctrl_r):
             return
+
+        self._ctrl_is_down = False
 
         # 组合键中的 Ctrl 释放 → 不计入连按
         if self._other_key_pressed:

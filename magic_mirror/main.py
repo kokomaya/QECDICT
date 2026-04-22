@@ -15,7 +15,7 @@ from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from magic_mirror.config import load_env, load_llm_config
-from magic_mirror.config.settings import HOTKEY_OCR_COPY, HOTKEY_TRIGGER
+from magic_mirror.config.settings import HOTKEY_CHAT, HOTKEY_OCR_COPY, HOTKEY_TRIGGER
 from magic_mirror.interfaces.types import RenderBlock
 from magic_mirror.pipeline import TranslatePipeline
 
@@ -243,6 +243,7 @@ class StreamTranslateApp(QObject):
     # 用信号将热键线程的触发安全传回主线程
     _sig_hotkey_triggered = pyqtSignal()
     _sig_ocr_copy_triggered = pyqtSignal()      # OCR 提取原文
+    _sig_chat_triggered = pyqtSignal()           # 选中文本 AI 聊天
     _sig_close_last_overlay = pyqtSignal()      # Esc 关闭最近一个覆盖层
     _sig_close_all_overlays = pyqtSignal()      # Ctrl+Shift+Esc 关闭全部
 
@@ -272,10 +273,13 @@ class StreamTranslateApp(QObject):
         # 热键监听
         self._hotkey_labels = _parse_hotkey(HOTKEY_TRIGGER)
         self._ocr_copy_labels = _parse_hotkey(HOTKEY_OCR_COPY)
+        self._chat_labels = _parse_hotkey(HOTKEY_CHAT)
         self._pressed_labels: set = set()
-        logger.debug("注册热键: %s → %s, %s → %s",
+        logger.debug("注册热键: %s → %s, %s → %s, %s → %s",
                      HOTKEY_TRIGGER, self._hotkey_labels,
-                     HOTKEY_OCR_COPY, self._ocr_copy_labels)
+                     HOTKEY_OCR_COPY, self._ocr_copy_labels,
+                     HOTKEY_CHAT, self._chat_labels)
+        self._sig_chat_triggered.connect(self._on_chat_hotkey)
         self._start_hotkey_listener()
 
         # 系统托盘
@@ -301,6 +305,11 @@ class StreamTranslateApp(QObject):
                 logger.info("热键匹配! 触发 OCR 提取")
                 self._pressed_labels.clear()
                 self._sig_ocr_copy_triggered.emit()
+            # Ctrl+Alt+Q → 选中文本 AI 聊天
+            elif self._chat_labels.issubset(self._pressed_labels):
+                logger.info("热键匹配! 触发 AI 聊天")
+                self._pressed_labels.clear()
+                self._sig_chat_triggered.emit()
             # Ctrl+Shift+Esc → 关闭全部覆盖层
             elif {"ctrl", "shift", "escape"}.issubset(self._pressed_labels):
                 logger.info("关闭全部覆盖层")
@@ -571,6 +580,136 @@ class StreamTranslateApp(QObject):
         dialog.show()
         logger.info("打开智能对话窗口 (上下文 %d 字符)", len(context_text))
 
+    # ── 选中文本 AI 聊天 ──
+
+    @pyqtSlot()
+    def _on_chat_hotkey(self) -> None:
+        """Ctrl+Alt+Q → 延迟后获取系统选中文本，打开聊天对话框。
+
+        延迟 300ms 等待用户松开所有物理按键，避免：
+        1. 残留 Ctrl/Alt 干扰模拟的 Ctrl+C
+        2. Ctrl 释放被 quickdict 双击检测误捕获
+        """
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(300, self._do_grab_and_chat)
+
+    @pyqtSlot()
+    def _do_grab_and_chat(self) -> None:
+        """延迟回调：获取选中文本并打开聊天（预填入输入框）。"""
+        try:
+            text = self._grab_selected_text()
+            if not text:
+                self._tray.showMessage(
+                    "Magic Mirror", "未检测到选中文本",
+                    QSystemTrayIcon.MessageIcon.Warning, 2000,
+                )
+                return
+            logger.info("grabbed text (%d chars), creating ChatDialog...", len(text))
+            dialog = ChatDialog(context_text="", prefill=text)
+            logger.info("ChatDialog created, storing ref and showing...")
+            if not hasattr(self, "_chat_dialogs"):
+                self._chat_dialogs: List = []
+            self._chat_dialogs.append(dialog)
+            dialog.finished.connect(lambda: self._chat_dialogs.remove(dialog))
+            dialog.show()
+            logger.info("打开 AI 聊天窗口 (预填 %d 字符)", len(text))
+        except Exception:
+            logger.exception("_do_grab_and_chat crashed")
+
+    @staticmethod
+    def _grab_selected_text() -> str:
+        """通过 Win32 keybd_event 模拟 Ctrl+C，从前台窗口获取选中文本。
+
+        使用 keybd_event 直接向前台窗口发送按键（比 SendInput 简单可靠）。
+        使用 win32 原生剪贴板 API，避免 Qt OleSetClipboard COM 锁冲突。
+        """
+        import ctypes
+        import time
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        # 64 位系统必须设置正确的参数/返回类型，否则指针被截断
+        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        user32.GetClipboardData.restype = ctypes.c_void_p
+        user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+
+        KEYEVENTF_KEYUP = 0x0002
+        VK_CONTROL = 0x11
+        VK_MENU = 0x12      # Alt
+        VK_C = 0x43
+        CF_UNICODETEXT = 13
+
+        # ── 剪贴板读写 ──
+        def _get_clipboard() -> str:
+            for _ in range(5):
+                if user32.OpenClipboard(0):
+                    try:
+                        h = user32.GetClipboardData(CF_UNICODETEXT)
+                        if not h:
+                            return ""
+                        p = kernel32.GlobalLock(h)
+                        if not p:
+                            return ""
+                        try:
+                            return ctypes.wstring_at(p)
+                        finally:
+                            kernel32.GlobalUnlock(h)
+                    finally:
+                        user32.CloseClipboard()
+                    break
+                time.sleep(0.02)  # 剪贴板被占用，短暂重试
+            return ""
+
+        def _set_clipboard(text: str) -> None:
+            for _ in range(5):
+                if user32.OpenClipboard(0):
+                    try:
+                        user32.EmptyClipboard()
+                        buf = (text + "\0").encode("utf-16-le")
+                        h = kernel32.GlobalAlloc(0x0002, len(buf))
+                        if not h:
+                            return
+                        p = kernel32.GlobalLock(h)
+                        if not p:
+                            return
+                        ctypes.memmove(p, buf, len(buf))
+                        kernel32.GlobalUnlock(h)
+                        user32.SetClipboardData(CF_UNICODETEXT, h)
+                    finally:
+                        user32.CloseClipboard()
+                    return
+                time.sleep(0.02)
+
+        # ── 执行 ──
+        backup = _get_clipboard()
+
+        # 确保修饰键已释放（物理键可能刚松开但 OS 状态还没更新）
+        user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)     # Alt ↑
+        user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)  # Ctrl ↑
+        time.sleep(0.05)
+
+        # 模拟 Ctrl+C
+        user32.keybd_event(VK_CONTROL, 0, 0, 0)                # Ctrl ↓
+        user32.keybd_event(VK_C, 0, 0, 0)                      # C ↓
+        user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)        # C ↑
+        user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)  # Ctrl ↑
+
+        time.sleep(0.2)  # 等待前台应用完成复制
+
+        selected = _get_clipboard()
+
+        # 恢复剪贴板
+        if selected != backup:
+            _set_clipboard(backup)
+
+        if selected == backup:
+            return ""
+        return selected.strip()
+
     # ── 系统托盘 ──
 
     @staticmethod
@@ -611,6 +750,10 @@ class StreamTranslateApp(QObject):
         act_ocr_copy.triggered.connect(self._on_ocr_copy_hotkey)
         menu.addAction(act_ocr_copy)
 
+        act_chat = QAction("AI 聊天 (Ctrl+Alt+D)", menu)
+        act_chat.triggered.connect(self._on_chat_hotkey)
+        menu.addAction(act_chat)
+
         menu.addSeparator()
 
         act_close_all = QAction("关闭全部覆盖层 (Ctrl+Shift+Esc)", menu)
@@ -631,7 +774,20 @@ class StreamTranslateApp(QObject):
 # 入口
 # ------------------------------------------------------------------
 
+def _check_single_instance(name: str) -> bool:
+    """尝试创建命名 Mutex，返回 True 表示是首个实例。"""
+    import ctypes
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main() -> None:
+    if not _check_single_instance("Global\\MagicMirror_SingleInstance"):
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0, "Magic Mirror 已在运行中，请关闭后再启动。", "Magic Mirror", 0x40)
+        return
+
     # 解析命令行参数
     debug = "--debug" in sys.argv
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Callable, List, Optional, Tuple
 
 from magic_mirror.interfaces import (
@@ -54,14 +55,17 @@ class TranslatePipeline:
             任一步骤异常时记录日志后原样抛出。
         """
         # 步骤 1: 截图
+        t0 = time.perf_counter()
         logger.debug("Pipeline step 1: capture(%s)", bbox)
         result = self._capture.capture(bbox)
-        logger.debug("  captured image shape: %s", result.image.shape)
+        t1 = time.perf_counter()
+        logger.info("│ 截图完成  %.0fms  shape=%s", (t1 - t0) * 1000, result.image.shape)
 
         # 步骤 2: OCR
         logger.debug("Pipeline step 2: recognize")
         text_blocks = self._ocr.recognize(result.image)
-        logger.debug("  recognized %d text blocks", len(text_blocks))
+        t2 = time.perf_counter()
+        logger.info("│ OCR 识别  %.0fms  → %d 个文本块", (t2 - t1) * 1000, len(text_blocks))
 
         if not text_blocks:
             logger.info("OCR 未识别到文本，跳过翻译和排版")
@@ -71,16 +75,20 @@ class TranslatePipeline:
         merged_blocks = _group_text_blocks(text_blocks)
 
         # 步骤 3: 翻译
+        t_tr0 = time.perf_counter()
         logger.debug("Pipeline step 3: translate %d blocks", len(merged_blocks))
         translated = self._translator.translate(merged_blocks)
-        logger.debug("  translated %d blocks", len(translated))
+        t_tr1 = time.perf_counter()
+        logger.info("│ 翻译完成  %.0fms  %d 段落", (t_tr1 - t_tr0) * 1000, len(translated))
 
         # 步骤 4: 排版
         logger.debug("Pipeline step 4: compute_layout")
         render_blocks = self._layout.compute_layout(
             translated, result.image, result.screen_bbox,
         )
-        logger.debug("  computed %d render blocks", len(render_blocks))
+        t_ly = time.perf_counter()
+        logger.info("│ 排版完成  %.0fms  %d 个渲染块", (t_ly - t_tr1) * 1000, len(render_blocks))
+        logger.info("└ 管线总耗时  %.0fms", (t_ly - t0) * 1000)
 
         return render_blocks, result.screen_bbox
 
@@ -92,9 +100,11 @@ class TranslatePipeline:
         result = capture_result
 
         # 步骤 2: OCR
+        t1 = time.perf_counter()
         logger.debug("Pipeline step 2: recognize")
         text_blocks = self._ocr.recognize(result.image)
-        logger.debug("  recognized %d text blocks", len(text_blocks))
+        t2 = time.perf_counter()
+        logger.info("│ OCR 识别  %.0fms  → %d 个文本块", (t2 - t1) * 1000, len(text_blocks))
 
         if not text_blocks:
             logger.info("OCR 未识别到文本，跳过翻译和排版")
@@ -104,16 +114,20 @@ class TranslatePipeline:
         merged_blocks = _group_text_blocks(text_blocks)
 
         # 步骤 3: 翻译
+        t_tr0 = time.perf_counter()
         logger.debug("Pipeline step 3: translate %d blocks", len(merged_blocks))
         translated = self._translator.translate(merged_blocks)
-        logger.debug("  translated %d blocks", len(translated))
+        t_tr1 = time.perf_counter()
+        logger.info("│ 翻译完成  %.0fms  %d 段落", (t_tr1 - t_tr0) * 1000, len(translated))
 
         # 步骤 4: 排版
         logger.debug("Pipeline step 4: compute_layout")
         render_blocks = self._layout.compute_layout(
             translated, result.image, result.screen_bbox,
         )
-        logger.debug("  computed %d render blocks", len(render_blocks))
+        t_ly = time.perf_counter()
+        logger.info("│ 排版完成  %.0fms  %d 个渲染块", (t_ly - t_tr1) * 1000, len(render_blocks))
+        logger.info("└ 管线总耗时  %.0fms (不含截图)", (t_ly - t1) * 1000)
 
         return render_blocks, result.screen_bbox
 
@@ -139,9 +153,12 @@ class TranslatePipeline:
         result = capture_result
 
         # 步骤 2: OCR
+        t_ocr0 = time.perf_counter()
         logger.debug("Streaming pipeline step 2: recognize")
         text_blocks = self._ocr.recognize(result.image)
-        logger.debug("  recognized %d text blocks", len(text_blocks))
+        t_ocr1 = time.perf_counter()
+        logger.info("│ [流式] OCR 识别  %.0fms  → %d 个文本块",
+                     (t_ocr1 - t_ocr0) * 1000, len(text_blocks))
 
         if not text_blocks:
             logger.info("OCR 未识别到文本")
@@ -159,6 +176,7 @@ class TranslatePipeline:
             logger.debug("  paragraph #%d: %s", i + 1, mb.text[:80])
 
         # 步骤 3+4: 逐段翻译 + 排版
+        t_tr0 = time.perf_counter()
         logger.debug("Streaming pipeline step 3+4: translate_stream + layout")
         emitted = 0
         for translated_block in self._translator.translate_stream(merged_blocks):
@@ -169,7 +187,10 @@ class TranslatePipeline:
                 on_block_ready(rb)
                 emitted += 1
 
-        logger.debug("  streamed %d render blocks", emitted)
+        t_end = time.perf_counter()
+        logger.info("│ [流式] 翻译+排版  %.0fms  %d 个渲染块",
+                     (t_end - t_tr0) * 1000, emitted)
+        logger.info("└ [流式] 管线总耗时  %.0fms", (t_end - t_ocr0) * 1000)
         return result.screen_bbox
 
 

@@ -89,11 +89,13 @@ class _ChatStreamWorker(QRunnable):
 class ChatDialog(QDialog):
     """Claude Code 风格多轮对话窗口。"""
 
-    def __init__(self, context_text: str, parent: QWidget | None = None) -> None:
+    def __init__(self, context_text: str, parent: QWidget | None = None,
+                 prefill: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Magic Mirror Chat")
         self.setMinimumSize(700, 540)
         self.resize(820, 640)
+        self._prefill = prefill
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -204,6 +206,8 @@ class ChatDialog(QDialog):
         self._input.setMaximumHeight(68)
         self._input.setMinimumWidth(500)
         self._input.setFont(QFont("Microsoft YaHei", 10))
+        if self._prefill:
+            self._input.setPlainText(self._prefill)
         center.addWidget(self._input)
 
         self._send_btn = QPushButton("↑")
@@ -307,6 +311,7 @@ class ChatDialog(QDialog):
 
     @pyqtSlot(str)
     def _on_chunk(self, piece: str) -> None:
+        # logger.debug("[LLM chunk] %r", piece)
         self._stream_buf += piece
         self._messages[-1]["text"] = self._stream_buf
         # 防抖：不是每个 chunk 都渲染，80ms 合并一次

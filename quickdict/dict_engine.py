@@ -12,7 +12,7 @@ from functools import lru_cache
 from quickdict.config import FROZEN
 
 if FROZEN:
-    _STARDICT_DIR = sys._MEIPASS  # type: ignore[attr-defined]
+    _STARDICT_DIR = os.path.join(sys._MEIPASS, "ecdict")  # type: ignore[attr-defined]
 else:
     _STARDICT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ecdict")
 

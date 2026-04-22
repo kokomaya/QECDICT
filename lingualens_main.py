@@ -1,23 +1,64 @@
 """LinguaLens — QuickDict + MagicMirror 合体，统一托盘入口。"""
 
 import ctypes
+import faulthandler
 import logging
 import os
 import signal
 import sys
+import traceback
+from datetime import datetime
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 
+def _get_log_path() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "lingualens.log")
+    return "lingualens.log"
+
+
+def _check_single_instance(name: str) -> bool:
+    """尝试创建命名 Mutex，返回 True 表示是首个实例。"""
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def main() -> None:
+    if not _check_single_instance("Global\\LinguaLens_SingleInstance"):
+        ctypes.windll.user32.MessageBoxW(
+            0, "LinguaLens 已在运行中，请关闭后再启动。", "LinguaLens", 0x40)
+        return
+
     debug = "--debug" in sys.argv
 
-    logging.basicConfig(
-        level=logging.DEBUG if debug else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    # ── 日志配置 ──
+    log_fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+    if debug:
+        log_file = _get_log_path()
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*60}\n[STARTUP] {datetime.now()} frozen={getattr(sys, 'frozen', False)}\n")
+
+        _fault_fh = open(log_file, "a", encoding="utf-8")
+        faulthandler.enable(file=_fault_fh)
+
+        def _excepthook(exc_type, exc_value, exc_tb):
+            with open(log_file, "a", encoding="utf-8") as fh:
+                fh.write(f"\n[UNHANDLED] {datetime.now()}\n")
+                traceback.print_exception(exc_type, exc_value, exc_tb, file=fh)
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+        sys.excepthook = _excepthook
+
+        handlers: list[logging.Handler] = [logging.FileHandler(log_file, encoding="utf-8")]
+        if sys.stderr is not None:
+            handlers.append(logging.StreamHandler())
+        logging.basicConfig(level=logging.DEBUG, format=log_fmt, handlers=handlers, force=True)
+    else:
+        logging.basicConfig(level=logging.WARNING, format=log_fmt)
+
     logger = logging.getLogger("lingualens")
 
     try:
@@ -77,6 +118,9 @@ def _build_tray(app, quickdict, mirror, has_mirror):
 
     menu = QMenu()
 
+    # 读取 QuickDict 已加载的持久化设置
+    _qs = quickdict._settings
+
     # ── QuickDict 区 ──
     header_qd = QAction("── QuickDict 取词 ──", menu)
     header_qd.setEnabled(False)
@@ -88,10 +132,59 @@ def _build_tray(app, quickdict, mirror, has_mirror):
     act_toggle.triggered.connect(toggle_capture)
 
     def on_capture_state_changed(enabled):
-        act_toggle.setText("关闭取词" if enabled else "开启取词")
+        act_toggle.setText("关闭取词 ✓" if enabled else "开启取词")
     quickdict._tray.sig_toggle_capture.connect(
         lambda: QTimer.singleShot(50, lambda: on_capture_state_changed(quickdict._tray._capture_enabled))
     )
+
+    # 取词模式子菜单（从持久化设置恢复选中状态）
+    from PyQt6.QtGui import QActionGroup
+    saved_mode = _qs.get("capture_mode", "auto")
+    mode_menu = menu.addMenu("取词模式")
+    mode_group = QActionGroup(menu)
+    mode_group.setExclusive(True)
+    for key, label in [("auto", "自动（UIA→OCR）"), ("uia", "仅 UIA"), ("ocr", "仅 OCR")]:
+        act = mode_menu.addAction(label)
+        act.setCheckable(True)
+        act.setActionGroup(mode_group)
+        act.triggered.connect(lambda checked, k=key: quickdict._tray.sig_capture_mode_changed.emit(k))
+        if key == saved_mode:
+            act.setChecked(True)
+
+    # 触发方式子菜单（从持久化设置恢复选中状态）
+    saved_trigger = _qs.get("trigger_mode", "ctrl")
+    trigger_menu = menu.addMenu("触发方式")
+    trigger_group = QActionGroup(menu)
+    trigger_group.setExclusive(True)
+    for key, label in [("hover", "悬停取词"), ("ctrl", "Ctrl 键取词")]:
+        act = trigger_menu.addAction(label)
+        act.setCheckable(True)
+        act.setActionGroup(trigger_group)
+        act.triggered.connect(lambda checked, k=key: quickdict._tray.sig_trigger_mode_changed.emit(k))
+        if key == saved_trigger:
+            act.setChecked(True)
+
+    menu.addSeparator()
+
+    # 显示截图区域（从持久化设置恢复，默认 True）
+    act_debug_region = menu.addAction("显示截图区域")
+    act_debug_region.setCheckable(True)
+    act_debug_region.setChecked(_qs.get("show_region", True))
+    act_debug_region.triggered.connect(
+        lambda checked: quickdict._tray.sig_toggle_debug_region.emit(checked)
+    )
+
+    # 状态指示器（从持久化设置恢复，默认 True）
+    act_status_ind = menu.addAction("状态指示器")
+    act_status_ind.setCheckable(True)
+    act_status_ind.setChecked(_qs.get("show_status", True))
+    act_status_ind.triggered.connect(
+        lambda checked: quickdict._tray.sig_toggle_status_indicator.emit(checked)
+    )
+
+    # 截图区域设置
+    act_region_settings = menu.addAction("截图区域设置…")
+    act_region_settings.triggered.connect(lambda: quickdict._tray.sig_region_settings.emit())
 
     menu.addSeparator()
 
@@ -112,6 +205,10 @@ def _build_tray(app, quickdict, mirror, has_mirror):
         act_close_all = QAction("关闭全部覆盖层", menu)
         act_close_all.triggered.connect(mirror._close_all_overlays)
         menu.addAction(act_close_all)
+
+        act_chat = QAction("AI 聊天 (Ctrl+Alt+D)", menu)
+        act_chat.triggered.connect(mirror._on_chat_hotkey)
+        menu.addAction(act_chat)
 
         menu.addSeparator()
 

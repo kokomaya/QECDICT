@@ -88,6 +88,10 @@ class WordCapture:
         parts = split_compound(word)
         return [w for w in parts if clean_word(w)]
 
+    def warmup(self):
+        """预热 OCR 引擎，避免首次 capture 明显卡顿。"""
+        self._ocr.warmup()
+
     # ── UI Automation 取词 ────────────────────────────────
 
     def _capture_via_uia(self, x: int, y: int) -> str | None:

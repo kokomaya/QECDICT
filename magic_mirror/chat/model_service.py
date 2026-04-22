@@ -69,5 +69,6 @@ def save_selected_model(model_name: str) -> None:
         except Exception:
             pass
     data["chat_model"] = model_name
+    _PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _PREFS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("已保存模型选择: %s", model_name)

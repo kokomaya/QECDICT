@@ -28,8 +28,8 @@ a = Analysis(
         # 内置资源：打包进 exe
         ("quickdict/assets/icon.png", "quickdict/assets"),
         ("quickdict/styles/popup.qss", "quickdict/styles"),
-        # stardict.py 需要在运行时被 import
-        ("ecdict/stardict.py", "."),
+        # ecdict 目录（stardict.py + 其他工具）
+        ("ecdict", "ecdict"),
     ] + _rapidocr_datas,
     hiddenimports=[
         "pynput.keyboard._win32",

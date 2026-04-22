@@ -11,6 +11,8 @@
   4. 多级放大（低分辨率文字）
   5. 自适应二值化（极低对比度场景）
   6. 边界填充（提升边缘文字检测率）
+  7. 反色（适用于暗色主题：IDE、终端、深色网页等）
+  8. 伽马校正（增强中等对比度场景的暗部细节）
 """
 
 from __future__ import annotations
@@ -91,6 +93,16 @@ def generate_variants(image: np.ndarray) -> List[VariantInfo]:
                 image=padded, offset_x=float(pad), offset_y=float(pad),
             ))
 
+    # ── 6. 反色（暗色主题：亮字暗底） ──
+    inv_img = _invert(image)
+    if inv_img is not None:
+        variants.append(VariantInfo(image=inv_img))
+
+    # ── 7. 伽马校正（中等对比度增强） ──
+    gamma_img = _gamma_correct(image)
+    if gamma_img is not None:
+        variants.append(VariantInfo(image=gamma_img))
+
     return variants
 
 
@@ -163,4 +175,43 @@ def _pad_border(image: np.ndarray, pad: int = 12) -> np.ndarray | None:
         )
     except Exception as e:
         logger.debug("边界填充失败: %s", e)
+        return None
+
+
+def _invert(image: np.ndarray) -> np.ndarray | None:
+    """反色：适用于亮字暗底场景（IDE、终端等暗色主题）。
+
+    仅当图像整体偏暗（平均亮度 < 127）时生成，
+    避免对亮色场景产生冗余变体。
+    参考 manga-image-translator 的 det_invert 策略。
+    """
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if gray.mean() >= 127:
+            return None  # 亮色背景，不需要反色
+        return cv2.bitwise_not(image)
+    except Exception as e:
+        logger.debug("反色失败: %s", e)
+        return None
+
+
+def _gamma_correct(image: np.ndarray, gamma: float = 0.5) -> np.ndarray | None:
+    """伽马校正：增强暗部细节。
+
+    gamma < 1 提亮暗部，适合中等对比度场景。
+    仅当灰度标准差在 [40, 100] 之间时生成（过低已有二值化，过高无需增强）。
+    参考 manga-image-translator 的 det_gamma_correct 策略。
+    """
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        std = gray.std()
+        if std < 40 or std > 100:
+            return None
+        inv_gamma = 1.0 / gamma
+        table = np.array(
+            [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
+        ).astype("uint8")
+        return cv2.LUT(image, table)
+    except Exception as e:
+        logger.debug("伽马校正失败: %s", e)
         return None
