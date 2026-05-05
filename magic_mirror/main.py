@@ -667,15 +667,9 @@ class StreamTranslateApp(QObject):
 
     @pyqtSlot()
     def _do_grab_and_chat(self) -> None:
-        """延迟回调：获取选中文本并打开聊天（预填入输入框）。"""
+        """延迟回调：获取选中文本并打开聊天（预填入输入框）。无选中文本时直接打开空对话框。"""
         try:
             text = self._grab_selected_text()
-            if not text:
-                self._tray.showMessage(
-                    "Magic Mirror", "未检测到选中文本",
-                    QSystemTrayIcon.MessageIcon.Warning, 2000,
-                )
-                return
             logger.info("grabbed text (%d chars), creating ChatDialog...", len(text))
             dialog = ChatDialog(context_text="", prefill=text)
             logger.info("ChatDialog created, storing ref and showing...")
