@@ -210,6 +210,10 @@ def _build_tray(app, quickdict, mirror, has_mirror):
         act_chat.triggered.connect(mirror._on_chat_hotkey)
         menu.addAction(act_chat)
 
+        act_quick_translate = QAction("快速互译 (Ctrl+Alt+E)", menu)
+        act_quick_translate.triggered.connect(mirror._on_quick_translate_hotkey)
+        menu.addAction(act_quick_translate)
+
         menu.addSeparator()
 
     # ── 公共 ──

@@ -15,7 +15,12 @@ from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from magic_mirror.config import load_env, load_llm_config
-from magic_mirror.config.settings import HOTKEY_CHAT, HOTKEY_OCR_COPY, HOTKEY_TRIGGER
+from magic_mirror.config.settings import (
+    HOTKEY_CHAT,
+    HOTKEY_OCR_COPY,
+    HOTKEY_QUICK_TRANSLATE,
+    HOTKEY_TRIGGER,
+)
 from magic_mirror.interfaces.types import RenderBlock
 from magic_mirror.pipeline import TranslatePipeline
 
@@ -29,6 +34,7 @@ from magic_mirror.ui.loading_indicator import LoadingIndicator
 from magic_mirror.ui.mirror_overlay import MirrorOverlay
 from magic_mirror.ui.text_overlay import TextOverlay
 from magic_mirror.ui.chat_dialog import ChatDialog
+from magic_mirror.ui.quick_translate_popup import QuickTranslatePopup
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +250,7 @@ class StreamTranslateApp(QObject):
     _sig_hotkey_triggered = pyqtSignal()
     _sig_ocr_copy_triggered = pyqtSignal()      # OCR 提取原文
     _sig_chat_triggered = pyqtSignal()           # 选中文本 AI 聊天
+    _sig_quick_translate_triggered = pyqtSignal()  # 快速互译
     _sig_close_last_overlay = pyqtSignal()      # Esc 关闭最近一个覆盖层
     _sig_close_all_overlays = pyqtSignal()      # Ctrl+Shift+Esc 关闭全部
 
@@ -274,13 +281,22 @@ class StreamTranslateApp(QObject):
         self._hotkey_labels = _parse_hotkey(HOTKEY_TRIGGER)
         self._ocr_copy_labels = _parse_hotkey(HOTKEY_OCR_COPY)
         self._chat_labels = _parse_hotkey(HOTKEY_CHAT)
+        self._quick_translate_labels = _parse_hotkey(HOTKEY_QUICK_TRANSLATE)
         self._pressed_labels: set = set()
-        logger.debug("注册热键: %s → %s, %s → %s, %s → %s",
-                     HOTKEY_TRIGGER, self._hotkey_labels,
-                     HOTKEY_OCR_COPY, self._ocr_copy_labels,
-                     HOTKEY_CHAT, self._chat_labels)
+        logger.debug(
+            "注册热键: %s → %s, %s → %s, %s → %s, %s → %s",
+            HOTKEY_TRIGGER, self._hotkey_labels,
+            HOTKEY_OCR_COPY, self._ocr_copy_labels,
+            HOTKEY_CHAT, self._chat_labels,
+            HOTKEY_QUICK_TRANSLATE, self._quick_translate_labels,
+        )
         self._sig_chat_triggered.connect(self._on_chat_hotkey)
+        self._sig_quick_translate_triggered.connect(self._on_quick_translate_hotkey)
         self._start_hotkey_listener()
+
+        # 快速翻译组件（懒初始化）
+        self._quick_translator = None
+        self._quick_translate_popups: List = []
 
         # 系统托盘
         self._setup_tray()
@@ -305,11 +321,16 @@ class StreamTranslateApp(QObject):
                 logger.info("热键匹配! 触发 OCR 提取")
                 self._pressed_labels.clear()
                 self._sig_ocr_copy_triggered.emit()
-            # Ctrl+Alt+Q → 选中文本 AI 聊天
+            # Ctrl+Alt+D → 选中文本 AI 聊天
             elif self._chat_labels.issubset(self._pressed_labels):
                 logger.info("热键匹配! 触发 AI 聊天")
                 self._pressed_labels.clear()
                 self._sig_chat_triggered.emit()
+            # Ctrl+Alt+E → 快速互译
+            elif self._quick_translate_labels.issubset(self._pressed_labels):
+                logger.info("热键匹配! 触发快速互译")
+                self._pressed_labels.clear()
+                self._sig_quick_translate_triggered.emit()
             # Ctrl+Shift+Esc → 关闭全部覆盖层
             elif {"ctrl", "shift", "escape"}.issubset(self._pressed_labels):
                 logger.info("关闭全部覆盖层")
@@ -582,9 +603,59 @@ class StreamTranslateApp(QObject):
 
     # ── 选中文本 AI 聊天 ──
 
+    # ── 快速互译 ──
+
+    @pyqtSlot()
+    def _on_quick_translate_hotkey(self) -> None:
+        """Ctrl+Alt+E → 延迟后获取选中文本，弹出快速翻译卡片。"""
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(300, self._do_quick_translate)
+
+    @pyqtSlot()
+    def _do_quick_translate(self) -> None:
+        """延迟回调：获取选中文本（可为空）并弹出翻译弹窗。"""
+        try:
+            text = self._grab_selected_text()  # 空字符串表示无选中
+            self._open_quick_translate_popup(text)
+        except Exception:
+            logger.exception("_do_quick_translate crashed")
+
+    def _open_quick_translate_popup(self, source_text: str) -> None:
+        """创建并显示快速翻译弹窗。"""
+        if self._quick_translator is None:
+            try:
+                from magic_mirror.translation.quick_translator import QuickTranslator
+                self._quick_translator = QuickTranslator()
+            except Exception as exc:
+                logger.error("QuickTranslator 初始化失败: %s", exc)
+                self._tray.showMessage(
+                    "Magic Mirror",
+                    f"快速翻译初始化失败: {exc}",
+                    QSystemTrayIcon.MessageIcon.Critical,
+                    3000,
+                )
+                return
+
+        popup = QuickTranslatePopup(source_text, self._quick_translator)
+        popup.open_in_chat.connect(self._on_quick_translate_open_chat)
+        # 防止 GC 回收，关闭时清理
+        self._quick_translate_popups.append(popup)
+        popup.destroyed.connect(
+            lambda: self._quick_translate_popups.remove(popup)
+            if popup in self._quick_translate_popups else None
+        )
+        popup.show_near_cursor()
+        logger.info("快速翻译弹窗已打开 (原文 %d 字符)", len(source_text))
+
+    @pyqtSlot(str, str)
+    def _on_quick_translate_open_chat(self, source: str, translation: str) -> None:
+        """快速翻译弹窗「在聊天中继续」→ 打开 ChatDialog。"""
+        context = f"原文：\n{source}\n\n译文：\n{translation}"
+        self._on_open_chat(context)
+
     @pyqtSlot()
     def _on_chat_hotkey(self) -> None:
-        """Ctrl+Alt+Q → 延迟后获取系统选中文本，打开聊天对话框。
+        """Ctrl+Alt+D → 延迟后获取系统选中文本，打开聊天对话框。
 
         延迟 300ms 等待用户松开所有物理按键，避免：
         1. 残留 Ctrl/Alt 干扰模拟的 Ctrl+C
@@ -753,6 +824,10 @@ class StreamTranslateApp(QObject):
         act_chat = QAction("AI 聊天 (Ctrl+Alt+D)", menu)
         act_chat.triggered.connect(self._on_chat_hotkey)
         menu.addAction(act_chat)
+
+        act_quick_translate = QAction("快速互译 (Ctrl+Alt+E)", menu)
+        act_quick_translate.triggered.connect(self._on_quick_translate_hotkey)
+        menu.addAction(act_quick_translate)
 
         menu.addSeparator()
 

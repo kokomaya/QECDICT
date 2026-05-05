@@ -177,3 +177,20 @@ def _extract_all_id_zh(text: str) -> Dict[int, str]:
         if parsed:
             result[parsed[0]] = parsed[1]
     return result
+
+
+# ------------------------------------------------------------------
+# 快速互译 Prompt（单文本，无需 JSON 格式）
+# ------------------------------------------------------------------
+
+QUICK_TRANSLATE_SYSTEM_ZH2EN = (
+    "You are a professional translator. "
+    "Translate the following Chinese text to natural, fluent English. "
+    "Output ONLY the translated text, no explanations."
+)
+
+QUICK_TRANSLATE_SYSTEM_EN2ZH = (
+    "You are a professional translator. "
+    "Translate the following English text to natural, fluent Chinese (Simplified). "
+    "Output ONLY the translated text, no explanations."
+)
