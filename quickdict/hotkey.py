@@ -71,8 +71,8 @@ class HotkeyListener:
             self._ctrl_is_down = True
             return
 
-        # Ctrl+F → 唤出中文查词对话框
-        if self._ctrl_is_down and hasattr(key, 'char') and key.char == '\x06':
+        # Ctrl+F → 唤出中文查词对话框（仅取词模式激活时拦截）
+        if self._ctrl_is_down and self._active and hasattr(key, 'char') and key.char == '\x06':
             self._other_key_pressed = True
             if self._on_open_lookup:
                 self._on_open_lookup()

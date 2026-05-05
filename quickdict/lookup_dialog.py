@@ -7,7 +7,7 @@ lookup_dialog.py — 中文查词输入对话框。
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QColor, QFont, QKeyEvent
+from PyQt6.QtGui import QColor, QFont, QIcon, QKeyEvent, QPixmap, QPainter
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from quickdict.config import STYLES_DIR
+from quickdict.config import ASSETS_DIR, STYLES_DIR
 
 
 def _load_dialog_qss() -> str:
@@ -57,8 +57,25 @@ class LookupDialog(QDialog):
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Dialog
         )
+        self.setWindowIcon(self._load_icon())
         self.setMinimumSize(420, 320)
         self.resize(480, 500)
+
+    @staticmethod
+    def _load_icon() -> QIcon:
+        icon_path = os.path.join(ASSETS_DIR, "icon.png")
+        if os.path.isfile(icon_path):
+            return QIcon(icon_path)
+        # 回退：绘制一个简单图标
+        pm = QPixmap(64, 64)
+        pm.fill(QColor(67, 97, 238))
+        p = QPainter(pm)
+        p.setPen(QColor(255, 255, 255))
+        from PyQt6.QtGui import QFont as _QF
+        p.setFont(_QF("Segoe UI", 36, _QF.Weight.Bold))
+        p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "词")
+        p.end()
+        return QIcon(pm)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)

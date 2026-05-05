@@ -186,6 +186,10 @@ def _build_tray(app, quickdict, mirror, has_mirror):
     act_region_settings = menu.addAction("截图区域设置…")
     act_region_settings.triggered.connect(lambda: quickdict._tray.sig_region_settings.emit())
 
+    # 中文查词
+    act_lookup = menu.addAction("中文查词 (Ctrl+F)")
+    act_lookup.triggered.connect(lambda: quickdict._on_open_lookup())
+
     menu.addSeparator()
 
     # ── MagicMirror 区 ──
