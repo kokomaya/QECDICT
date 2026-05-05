@@ -21,21 +21,42 @@ _MAX_CONTEXT_CHARS = 24000       # ≈ 6000 token
 _CHARS_PER_TOKEN = 4
 
 _CHAT_SYSTEM_PROMPT = (
-    "你是一个智能助手。用户会提供一段 OCR 提取的原文作为上下文，"
-    "请基于该文本回答用户的问题。回答使用中文，简洁准确。"
+    "你是一个智能助手，请根据用户提供的上下文回答问题。回答使用中文，简洁准确。"
 )
+
+# 每种上下文来源对应的专属系统提示
+_CONTEXT_SYSTEM_PROMPTS: dict[str, str] = {
+    "屏幕覆盖翻译": (
+        "你是一个智能助手。用户提供了一段屏幕截图的原文（英文）及其翻译（中文），"
+        "请基于此回答问题，例如核实译文准确性、解释专业术语或继续讨论内容。回答使用中文，简洁准确。"
+    ),
+    "OCR 文本": (
+        "你是一个智能助手。用户提供了一段 OCR 从屏幕截图中提取的原文，"
+        "请基于此回答用户的问题。回答使用中文，简洁准确。"
+    ),
+    "快速互译": (
+        "你是一个智能助手。用户提供了一段文本及其翻译，"
+        "请基于此回答问题，例如改善译文、解释词语或继续讨论原文内容。回答使用中文，简洁准确。"
+    ),
+}
 
 
 class ChatSession:
     """单次聊天会话 — 管理消息历史和 token 预算。"""
 
-    def __init__(self, context_text: str, model: str) -> None:
+    def __init__(self, context_text: str, model: str, context_label: str = "") -> None:
         self._model = model
-        self._messages: List[dict] = [
-            {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": f"以下是 OCR 提取的原文，请基于此回答后续问题：\n\n{context_text}"},
-            {"role": "assistant", "content": "好的，我已阅读以上文本。请问有什么问题？"},
-        ]
+        system = _CONTEXT_SYSTEM_PROMPTS.get(context_label, _CHAT_SYSTEM_PROMPT)
+        if context_text.strip():
+            self._messages: List[dict] = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"以下是上下文内容，请基于此回答后续问题：\n\n{context_text}"},
+                {"role": "assistant", "content": "好的，我已了解上下文。请问有什么问题？"},
+            ]
+        else:
+            self._messages: List[dict] = [
+                {"role": "system", "content": system},
+            ]
         self._client: openai.OpenAI | None = None
 
     @property

@@ -153,4 +153,44 @@ QSizeGrip#sizeGrip {{
     width: 12px;
     height: 12px;
 }}
+
+/* ── 上下文卡片 ── */
+QWidget#contextCard {{
+    background: #1c1c1c;
+    border-bottom: 1px solid {BORDER};
+}}
+QLabel#contextBadge {{
+    background: #1a3a2a;
+    color: #6bcf99;
+    border: 1px solid #2d5a3d;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#contextPreview {{
+    color: #5e5e5e;
+    font-size: 11px;
+    background: transparent;
+}}
+QPushButton#contextToggle {{
+    background: transparent;
+    color: #5e5e5e;
+    border: none;
+    font-size: 12px;
+    padding: 0;
+    min-width: 20px;
+    max-width: 20px;
+}}
+QPushButton#contextToggle:hover {{
+    color: {TEXT};
+}}
+QTextEdit#contextBody {{
+    background: #171717;
+    color: #7a7a7a;
+    border: none;
+    font-size: 11px;
+    padding: 6px 12px;
+    selection-background-color: rgba(255,255,255,0.12);
+}}
 """

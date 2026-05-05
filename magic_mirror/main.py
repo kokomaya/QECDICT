@@ -589,17 +589,18 @@ class StreamTranslateApp(QObject):
 
     # ── 智能对话 ──
 
-    @pyqtSlot(str)
-    def _on_open_chat(self, context_text: str) -> None:
-        """覆盖层右键菜单「智能对话」→ 打开聊天窗口。"""
-        dialog = ChatDialog(context_text)
+    @pyqtSlot(str, str)
+    def _on_open_chat(self, context_text: str, context_label: str = "") -> None:
+        """覆盖层右键菜单「智能对话」 → 打开聊天窗口。"""
+        dialog = ChatDialog(context_text, context_label=context_label)
         # 防止 GC 回收
         if not hasattr(self, "_chat_dialogs"):
             self._chat_dialogs: List = []
         self._chat_dialogs.append(dialog)
         dialog.finished.connect(lambda: self._chat_dialogs.remove(dialog))
         dialog.show()
-        logger.info("打开智能对话窗口 (上下文 %d 字符)", len(context_text))
+        logger.info("打开智能对话窗口 (%s, 上下文 %d 字符)",
+                    context_label or "无标签", len(context_text))
 
     # ── 选中文本 AI 聊天 ──
 
@@ -650,8 +651,8 @@ class StreamTranslateApp(QObject):
     @pyqtSlot(str, str)
     def _on_quick_translate_open_chat(self, source: str, translation: str) -> None:
         """快速翻译弹窗「在聊天中继续」→ 打开 ChatDialog。"""
-        context = f"原文：\n{source}\n\n译文：\n{translation}"
-        self._on_open_chat(context)
+        context = f"』原文『\n{source}\n\n』译文『\n{translation}"
+        self._on_open_chat(context, "快速互译")
 
     @pyqtSlot()
     def _on_chat_hotkey(self) -> None:

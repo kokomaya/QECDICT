@@ -24,7 +24,7 @@ class TextOverlay(QWidget):
     """OCR 文本覆盖层 — 无边框置顶窗口，文本可选中复制。"""
 
     # 用户请求打开智能对话
-    sig_open_chat = pyqtSignal(str)       # context_text
+    sig_open_chat = pyqtSignal(str, str)  # (context_text, context_label)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -167,7 +167,7 @@ class TextOverlay(QWidget):
         """发射智能对话信号，携带当前所有文本。"""
         text = self._editor.toPlainText()
         if text:
-            self.sig_open_chat.emit(text)
+            self.sig_open_chat.emit(text, "OCR 文本")
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:

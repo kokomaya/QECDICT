@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizeGrip,
+    QSizePolicy,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -89,8 +91,8 @@ class _ChatStreamWorker(QRunnable):
 class ChatDialog(QDialog):
     """Claude Code 风格多轮对话窗口。"""
 
-    def __init__(self, context_text: str, parent: QWidget | None = None,
-                 prefill: str = "") -> None:
+    def __init__(self, context_text: str, context_label: str = "",
+                 parent: QWidget | None = None, prefill: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Magic Mirror Chat")
         self.setMinimumSize(700, 540)
@@ -104,6 +106,7 @@ class ChatDialog(QDialog):
         self.setStyleSheet(CHAT_DIALOG_QSS)
 
         self._context_text = context_text
+        self._context_label = context_label
         self._session: ChatSession | None = None
         self._streaming = False
 
@@ -182,6 +185,10 @@ class ChatDialog(QDialog):
 
         root.addWidget(title_bar)
 
+        # ── 上下文卡片（仅当 context_text 非空时显示）──
+        if self._context_text:
+            self._build_context_card(root)
+
         # ── 对话区（全宽，无侧栏）──
         self._chat = ChatHtmlView()
         root.addWidget(self._chat, 1)
@@ -224,6 +231,52 @@ class ChatDialog(QDialog):
         grip = QSizeGrip(self)
         grip.setObjectName("sizeGrip")
         grip.setFixedSize(12, 12)
+
+    def _build_context_card(self, root: QVBoxLayout) -> None:
+        """在标题栏下方插入可折叠的上下文来源卡片。"""
+        card = QWidget()
+        card.setObjectName("contextCard")
+        cl = QHBoxLayout(card)
+        cl.setContentsMargins(12, 5, 8, 5)
+        cl.setSpacing(8)
+
+        badge = QLabel(self._context_label or "上下文")
+        badge.setObjectName("contextBadge")
+        cl.addWidget(badge)
+
+        # 折叠状态下的一行预览文字
+        preview_text = self._context_text.replace("\n", " ").strip()
+        if len(preview_text) > 70:
+            preview_text = preview_text[:70] + "…"
+        self._ctx_preview_label = QLabel(preview_text)
+        self._ctx_preview_label.setObjectName("contextPreview")
+        self._ctx_preview_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        cl.addWidget(self._ctx_preview_label)
+
+        self._ctx_toggle_btn = QPushButton("▾")
+        self._ctx_toggle_btn.setObjectName("contextToggle")
+        self._ctx_toggle_btn.clicked.connect(self._toggle_context_card)
+        cl.addWidget(self._ctx_toggle_btn)
+
+        root.addWidget(card)
+
+        # 展开后的正文区域（默认隐藏）
+        self._ctx_body = QTextEdit()
+        self._ctx_body.setObjectName("contextBody")
+        self._ctx_body.setReadOnly(True)
+        self._ctx_body.setPlainText(self._context_text)
+        self._ctx_body.setMaximumHeight(160)
+        self._ctx_body.setVisible(False)
+        root.addWidget(self._ctx_body)
+
+    def _toggle_context_card(self) -> None:
+        """切换上下文卡片展开/折叠状态。"""
+        expanded = self._ctx_body.isVisible()
+        self._ctx_body.setVisible(not expanded)
+        self._ctx_preview_label.setVisible(expanded)   # 折叠时显示预览，展开时隐藏
+        self._ctx_toggle_btn.setText("▴" if not expanded else "▾")
 
     # ------------------------------------------------------------------
     # 标题栏拖拽
@@ -276,7 +329,8 @@ class ChatDialog(QDialog):
         model = self._combo.currentText()
         if not model or model in ("Loading…", "(no models)"):
             return
-        self._session = ChatSession(self._context_text, model)
+        self._session = ChatSession(self._context_text, model,
+                                    context_label=self._context_label)
         self._update_tokens()
 
     # ------------------------------------------------------------------

@@ -43,7 +43,7 @@ class MirrorOverlay(QWidget):
     # 用户请求对此覆盖层区域重新翻译
     sig_retranslate = pyqtSignal(tuple)   # screen_bbox (x, y, w, h)
     # 用户请求打开智能对话
-    sig_open_chat = pyqtSignal(str)       # context_text
+    sig_open_chat = pyqtSignal(str, str)  # (context_text, context_label)
     # 覆盖层拖拽 / 缩放后几何变化
     sig_geometry_changed = pyqtSignal(tuple)   # (x, y, w, h)
 
@@ -321,9 +321,18 @@ class MirrorOverlay(QWidget):
         self.sig_retranslate.emit(bbox)
 
     def _open_chat(self) -> None:
-        texts = [b.translated_text for b in self._render_blocks]
-        if texts:
-            self.sig_open_chat.emit("\n".join(texts))
+        if not self._render_blocks:
+            return
+        source_parts = [b.source_text for b in self._render_blocks if b.source_text]
+        trans_parts = [b.translated_text for b in self._render_blocks]
+        if source_parts:
+            context = (
+                f"』原文（英文）『\n{chr(10).join(source_parts)}\n\n"
+                f"』译文（中文）『\n{chr(10).join(trans_parts)}"
+            )
+        else:
+            context = "\n".join(trans_parts)
+        self.sig_open_chat.emit(context, "屏幕覆盖翻译")
 
     def _sync_preview(self) -> None:
         bbox = (self.x(), self.y(), self.width(), self.height())
