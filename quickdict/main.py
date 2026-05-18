@@ -139,6 +139,8 @@ class QuickDictApp(QObject):
         self._tray.show()
         self._region_dialog: RegionSettingsDialog | None = None
         self._lookup_dialog: LookupDialog | None = None
+        self._cn_lookup: ChineseLookup | None = None
+        self._lookup_engine: DictEngine | None = None
         self._search_gen = 0  # 查词代次，丢弃过期结果
 
         # 启动键盘监听
@@ -274,13 +276,41 @@ class QuickDictApp(QObject):
             self._lookup_dialog = LookupDialog()
             self._lookup_dialog.sig_search_requested.connect(self._on_lookup_search)
             self._lookup_dialog.sig_detail_requested.connect(self._on_lookup_detail)
+            self._lookup_dialog.sig_closed.connect(self._on_lookup_closed)
             # 主线程专用的查询实例（避免跨线程使用 worker 的 sqlite3 连接）
             self._cn_lookup = ChineseLookup(ensure_db(), check_same_thread=False)
             self._lookup_engine = DictEngine(ensure_db())
+            # 预热：后台线程触发 SQLite 页面缓存加载，消除首次查询延迟
+            threading.Thread(target=self._warmup_lookup, daemon=True).start()
+        else:
+            # 对话框已存在但引擎被释放，重新创建
+            if self._cn_lookup is None:
+                self._cn_lookup = ChineseLookup(ensure_db(), check_same_thread=False)
+                self._lookup_engine = DictEngine(ensure_db())
+                threading.Thread(target=self._warmup_lookup, daemon=True).start()
         self._lookup_dialog.show_and_focus()
+
+    def _warmup_lookup(self):
+        """在后台预热双语互查引擎，触发 SQLite 页面缓存。"""
+        try:
+            self._cn_lookup.search("test", limit=1)
+            self._cn_lookup.search("你", limit=1)
+        except Exception:
+            pass
+
+    def _on_lookup_closed(self):
+        """双语互查对话框关闭 → 释放数据库连接节省资源。"""
+        if self._cn_lookup is not None:
+            self._cn_lookup.close()
+            self._cn_lookup = None
+        if self._lookup_engine is not None:
+            self._lookup_engine.close()
+            self._lookup_engine = None
 
     def _on_lookup_search(self, keyword: str):
         """双语互查对话框搜索请求 — 异步执行，支持打断。"""
+        if self._cn_lookup is None:
+            return
         self._search_gen += 1
         gen = self._search_gen
         if self._lookup_dialog:
@@ -314,6 +344,8 @@ class QuickDictApp(QObject):
 
     def _on_lookup_detail(self, word: str):
         """双语互查对话框点击条目 → 查完整释义并弹窗。"""
+        if self._lookup_engine is None:
+            return
         data = self._lookup_engine.lookup(word)
         if data:
             # 在对话框附近弹出详情

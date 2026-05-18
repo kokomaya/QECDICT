@@ -38,6 +38,7 @@ class LookupDialog(QDialog):
 
     sig_search_requested = pyqtSignal(str)  # 用户请求搜索关键词
     sig_detail_requested = pyqtSignal(str)  # 用户点击某词条，请求完整释义
+    sig_closed = pyqtSignal()               # 对话框被关闭/隐藏
 
     _DEBOUNCE_MS = 300
 
@@ -339,5 +340,11 @@ class LookupDialog(QDialog):
         """Esc 关闭对话框。"""
         if event.key() == Qt.Key.Key_Escape:
             self.hide()
+            self.sig_closed.emit()
         else:
             super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        """窗口关闭按钮 → 发射关闭信号。"""
+        self.sig_closed.emit()
+        super().closeEvent(event)
