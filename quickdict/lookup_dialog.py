@@ -1,7 +1,7 @@
 """
-lookup_dialog.py — 中文查词输入对话框。
+lookup_dialog.py -- 双语互查输入对话框。
 
-职责单一：提供输入框 + 结果列表 UI，接收用户中文输入并展示反查结果。
+职责单一：提供输入框 + 结果列表 UI，接收用户中英文输入并展示查询结果。
 不含数据库查询逻辑（通过信号与外部引擎交互）。
 """
 import os
@@ -34,7 +34,7 @@ def _load_dialog_qss() -> str:
 
 
 class LookupDialog(QDialog):
-    """中文查词输入对话框。"""
+    """双语互查输入对话框。"""
 
     sig_search_requested = pyqtSignal(str)  # 用户请求搜索关键词
     sig_detail_requested = pyqtSignal(str)  # 用户点击某词条，请求完整释义
@@ -52,7 +52,7 @@ class LookupDialog(QDialog):
         self._debounce_timer.timeout.connect(self._on_debounce_fire)
 
     def _init_window(self):
-        self.setWindowTitle("中文查词")
+        self.setWindowTitle("双语互查")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Dialog
@@ -83,7 +83,7 @@ class LookupDialog(QDialog):
         layout.setSpacing(10)
 
         # ── 标题行 ──
-        title = QLabel("🔍 中文查词")
+        title = QLabel("🔍 双语互查")
         title.setObjectName("dialog_title")
         layout.addWidget(title)
 
@@ -93,7 +93,7 @@ class LookupDialog(QDialog):
 
         self._input = QLineEdit()
         self._input.setObjectName("search_input")
-        self._input.setPlaceholderText("输入中文关键词…")
+        self._input.setPlaceholderText("输入中文或英文关键词…")
         self._input.returnPressed.connect(self._on_search)
         self._input.textChanged.connect(self._on_text_changed)
         input_row.addWidget(self._input)

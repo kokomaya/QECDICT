@@ -86,7 +86,7 @@ class QuickDictApp(QObject):
         self._worker.moveToThread(self._worker_thread)
         self._worker_thread.started.connect(self._worker.init_engine)
         self._sig_lookup.connect(self._worker.lookup)
-        self._worker.sig_result.connect(self._on_lookup_result)
+        self._worker.sig_result.connect(self._on_word_lookup_result)
         self._worker_thread.start()
 
         # 取词轮询定时器（高频检测鼠标位置，不直接取词）
@@ -266,10 +266,10 @@ class QuickDictApp(QObject):
         self._settings["region_opacity"] = opacity
         save_settings(self._settings)
 
-    # ── 中文查词对话框 ────────────────────────────────────
+    # ── 双语互查对话框 ────────────────────────────────────
 
     def _on_open_lookup(self):
-        """唤出中文查词对话框。"""
+        """唤出双语互查对话框。"""
         if self._lookup_dialog is None:
             self._lookup_dialog = LookupDialog()
             self._lookup_dialog.sig_search_requested.connect(self._on_lookup_search)
@@ -280,7 +280,7 @@ class QuickDictApp(QObject):
         self._lookup_dialog.show_and_focus()
 
     def _on_lookup_search(self, keyword: str):
-        """中文查词对话框搜索请求 — 异步执行，支持打断。"""
+        """双语互查对话框搜索请求 — 异步执行，支持打断。"""
         self._search_gen += 1
         gen = self._search_gen
         if self._lookup_dialog:
@@ -313,7 +313,7 @@ class QuickDictApp(QObject):
             self._lookup_dialog.show_results(results)
 
     def _on_lookup_detail(self, word: str):
-        """中文查词对话框点击条目 → 查完整释义并弹窗。"""
+        """双语互查对话框点击条目 → 查完整释义并弹窗。"""
         data = self._lookup_engine.lookup(word)
         if data:
             # 在对话框附近弹出详情
@@ -424,7 +424,7 @@ class QuickDictApp(QObject):
         parts = self._capture.split_word(word)
         self._sig_lookup.emit(word, parts)
 
-    def _on_lookup_result(self, word: str, data):
+    def _on_word_lookup_result(self, word: str, data):
         """后台查询完成 → 隐藏加载指示，在主线程显示弹窗。"""
         self._loading.hide_dot()
         # 查询期间单词已变 → 丢弃过期结果

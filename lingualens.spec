@@ -48,6 +48,10 @@ a = Analysis(
         "pygments.lexers",
         "pygments.formatters",
         "pygments.formatters.html",
+        # QuickDict 双语互查（懒加载，需显式声明）
+        "quickdict.lookup_dialog",
+        "quickdict._chinese_lookup",
+        "quickdict.dict_engine",
         # 快速互译（懒加载，需显式声明）
         "magic_mirror.translation.quick_translator",
     ],
