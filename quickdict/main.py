@@ -141,6 +141,7 @@ class QuickDictApp(QObject):
         self._lookup_dialog: LookupDialog | None = None
         self._cn_lookup: ChineseLookup | None = None
         self._lookup_engine: DictEngine | None = None
+        self._lookup_closing = False
         self._search_gen = 0  # 查词代次，丢弃过期结果
 
         # 启动键盘监听
@@ -283,6 +284,8 @@ class QuickDictApp(QObject):
             # 预热：后台线程触发 SQLite 页面缓存加载，消除首次查询延迟
             threading.Thread(target=self._warmup_lookup, daemon=True).start()
         else:
+            # 取消待执行的延迟清理（用户在清理前重新打开了对话框）
+            self._lookup_closing = False
             # 对话框已存在但引擎被释放，重新创建
             if self._cn_lookup is None:
                 self._cn_lookup = ChineseLookup(ensure_db(), check_same_thread=False)
@@ -299,7 +302,15 @@ class QuickDictApp(QObject):
             pass
 
     def _on_lookup_closed(self):
-        """双语互查对话框关闭 → 释放数据库连接节省资源。"""
+        """双语互查对话框关闭 → 延迟释放数据库连接，避免阻塞 UI 隐藏动画。"""
+        self._lookup_closing = True
+        QTimer.singleShot(0, self._cleanup_lookup_resources)
+
+    def _cleanup_lookup_resources(self):
+        """实际释放双语互查的数据库连接（若对话框已重新打开则跳过）。"""
+        if not self._lookup_closing:
+            return
+        self._lookup_closing = False
         if self._cn_lookup is not None:
             self._cn_lookup.close()
             self._cn_lookup = None
@@ -479,6 +490,13 @@ class QuickDictApp(QObject):
         self._settle_timer.stop()
         self._hotkey.stop()
         self._tray.hide()
+        self._lookup_closing = False
+        if self._cn_lookup is not None:
+            self._cn_lookup.close()
+            self._cn_lookup = None
+        if self._lookup_engine is not None:
+            self._lookup_engine.close()
+            self._lookup_engine = None
         self._worker_thread.quit()
         self._worker_thread.wait(1000)
         QApplication.quit()
